@@ -1,0 +1,15 @@
+{
+  "name": "prompt-and-destroy",
+  "owner": {
+    "name": "Ali Al-Gburi"
+  },
+  "description": "Prompt & Destroy, a slingshot physics game for Claude Code.",
+  "plugins": [
+    {
+      "name": "prompt-and-destroy",
+      "source": "./",
+      "description": "A slingshot physics game in a pane: prompt any object into existence, drawn and shaped by the Forge, and fling it at towers of bugs.",
+      "version": "0.3.0"
+    }
+  ]
+}

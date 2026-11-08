@@ -1,0 +1,9 @@
+{
+  "name": "prompt-and-destroy",
+  "version": "0.3.0",
+  "description": "A slingshot physics game in a pane: prompt any object into existence, drawn and shaped by the Forge, and fling it at towers of bugs.",
+  "author": {
+    "name": "Ali Al-Gburi"
+  },
+  "types": "./types/index.d.ts"
+}
