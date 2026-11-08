@@ -12,10 +12,10 @@ You need Claude Code 2.1.275 or later. The desktop app draws the game as picture
 terminal draws it in coloured cells. Each object you forge is one Claude Sonnet call,
 billed to your own Claude Code session.
 
-From the GitHub repository that holds this folder (put its `<owner>/<repo>` in):
+In Claude Code, run:
 
 ```
-/plugin install prompt-and-destroy --marketplace <owner>/<repo>
+/plugin install prompt-and-destroy --marketplace AliAl-Gburi/prompt-and-destroy
 ```
 
 Or from a copy of this folder: put it at `~/.claude/skills/prompt-and-destroy/` and
