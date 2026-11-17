@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { INERT, newGame, pointer, setForge, settleNow, type ShotSpec } from '../hooks/engine'
+import { fire, INERT, newGame, pointer, setForge, settleNow, tick, trajectory, type ShotSpec } from '../hooks/engine'
 import { aimCells, backdrop, hudMarkup, pictureSize, vector } from '../hooks/vector'
 
 const BALL: ShotSpec = {
