@@ -69,7 +69,7 @@ The JSON
     fade: true for a puff (a flame, smoke, a cloud): it swells, slows and fades as it goes.
     turn: "point" (it points along its flight), "spin" (it tumbles), "upright" (it stays as drawn).
     trail: the "#rrggbb" color of the streak or smoke it leaves behind, or "" for none.
-- matter: what it is made of and carries, each 0 to 1 (heat -1 to 1); leave out what is 0. The world's chemistry works from these numbers alone, the same for everything, so rate the object as it really is, inside and out:
+- matter: what it is made of and carries, each 0 to 1 (heat -1 to 1); leave out what is 0. The world's chemistry works from these numbers alone, the same for everything, so rate the object as it really is, inside and out. First name to yourself what its body is mostly made of (metal, wood, plastic, glass, rubber, stone, flesh, cloth, paper, food, water, ice...) and give it every value that material has, even the dull ones (metal conducts and dissolves, plastic melts, flesh burns a little, conducts and dissolves), then add what it carries or does (a flame's heat, a battery's charge, the water in it):
   heat: -1 freezing (liquid nitrogen), 0 room temperature, 1 burning (a flame, lava).
   burns: how readily it catches fire and how long it burns: 0 stone, metal or water, 0.3 a living thing, 0.6 wood, 1 paper or gunpowder.
   explodes: how violently it goes off once lit or shocked: 0 most things, 0.5 a firework, 1 dynamite.
@@ -92,7 +92,7 @@ The drawing
 It is shown 40 to 120 pixels across while it spins through the air, so draw a bold, flat cartoon sticker that reads instantly at that size.
 - Only the object: no background, ground, cast shadow, scenery, motion lines or lettering. Show it from its most recognizable side.
 - A recognizable silhouette that fills the viewBox edge to edge. A circle's drawing fills the whole circle; a polygon's points trace the drawing's outer edge.
-- A thick dark outline around the main shapes: stroke="#1b1b2b" (or a very dark shade of the color), stroke-width about 3.5% of the smaller of W and H (4 when the smaller side is 120), stroke-linejoin="round". Set these once on a wrapping <g>.
+- A thick dark outline around the main shapes: stroke="#1b1b2b" (or a very dark shade of the color), stroke-width about 3.5% of the smaller of W and H (4 when the smaller side is 120), stroke-linejoin="round". Set these once on a wrapping <g> that holds every main shape, so each part (limbs, handles, wheels, wings) gets the outline too.
 - 2 to 4 main flat fill colors, plus a lighter highlight shape on the upper left (such as fill="#ffffff" opacity="0.35") and a darker shade shape along the lower right (such as fill="#000000" opacity="0.2"), both without outline.
 - 8 to 40 elements, spent on the details that make it unmistakable: a piano's keys and propped lid, a bee's stripes and wings, envelopes spilling out of an inbox, a face if it has one.
 - Use only g, path, rect, circle, ellipse, line, polyline and polygon, with presentation attributes (fill, stroke, stroke-width, stroke-linejoin, stroke-linecap, opacity, fill-opacity, stroke-opacity, fill-rule, transform). No text, gradients, defs, filters, images, masks, clip paths, style attributes, CSS, scripts or url() references.
@@ -289,7 +289,7 @@ export function parseItem(reply: string, prompt: string, id: string): Item | und
   const blocks = svgBlocks(at >= 0 ? reply.slice(at) : '')
   const svg = inner ?? blocks[0] ?? ''
   const roundAt = record(record(o.power).round)
-  const roundArt = drawing(roundAt.svg) ?? drawing(roundAt.art) ?? (inner ? undefined : blocks[1]) ?? ''
+  const roundArt = drawing(roundAt.svg) ?? drawing(roundAt.art) ?? (inner ? blocks.find(b => !b.includes('\\"')) : blocks[1]) ?? ''
   const view = viewOf(rootOf(tags(svg)), width * 100, height * 100)
   const points = shape === 'polygon' ? outline(o.points, view, width, height) : []
   // An object the model gave no power, or one it does not know, gets the words' guess.

@@ -478,3 +478,21 @@ test('what an object is made of is the model\'s rating, clamped; with none, the 
   expect(fallbackItem('a can of petrol', 'p1').matter).toMatchObject({ burns: 1, explodes: 0.7 })
   expect(fallbackItem('a vague notion', 'v1').matter).toEqual(NO_MATTER)
 })
+
+test('an object drawn inside its JSON still finds its round drawn after it', () => {
+  const body = '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="100" height="100" fill="#ff0000"/></svg>'
+  const round = '<svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="5" r="5" fill="#00ff00"/></svg>'
+  const fields = {
+    name: 'Thing',
+    width: 1,
+    height: 1,
+    color: '#ff0000',
+    shape: 'box',
+    ability: 'shoot',
+    svg: body,
+    power: { name: 'Pew', from: [100, 50], facing: 'right', aim: 'target', round: { size: [0.1, 0.1], color: '#00ff00', count: 1 } },
+  }
+  const item = parseItem(`${JSON.stringify(fields)}\n${round}`, 'a thing', 'r1')!
+  expect(item.art).toContain('#ff0000')
+  expect(item.power.round.art).toContain('circle')
+})

@@ -1485,7 +1485,9 @@ function pelletMarkup(tr: PelletTrack, stride: number, ids: RoundIds): string {
     const last = count - 1
     move =
       `<animateTransform attributeName="transform" type="translate" values="${keys.map(i => `${n(X(i))} ${n(Y(i))}`).join(';')}" ` +
-      `keyTimes="${keys.map(i => n(i / last)).join(';')}" begin="${at(tr.born)}" dur="${Math.round(last * TICK_MS) / 1000}s" fill="freeze"/>`
+      // Evenly spaced keys need no times of their own.
+      (last % stride === 0 ? '' : `keyTimes="${keys.map(i => n(i / last)).join(';')}" `) +
+      `begin="${at(tr.born)}" dur="${Math.round(last * TICK_MS) / 1000}s" fill="freeze"/>`
   }
   let look = roundLook(r, tr.color, ids)
   if (r.fade) {
@@ -1565,7 +1567,12 @@ function effectMarkup(born: number, fx: Effect): string {
       lobes +
       `<circle r="${n(R * 0.3)}" fill="#ffb347">${grow(R * 0.3, R * 0.5)}</circle>` +
       `<circle r="${n(R * 0.16)}" fill="#fff1a8">${grow(R * 0.16, R * 0.26)}<animate attributeName="opacity" values="1;0;0" begin="${begin}" dur="${dur}" fill="freeze"/></circle></g>` +
-      `<circle r="${n(R * 0.45)}" fill="#ffffff" opacity="0"><animate attributeName="opacity" values="0.9;0" begin="${begin}" dur="0.14s" fill="freeze"/></circle></g>`
+      `<circle r="${n(R * 0.45)}" fill="#ffffff" opacity="0"><animate attributeName="opacity" values="0.9;0" begin="${begin}" dur="0.14s" fill="freeze"/></circle>` +
+      // A shock ring racing out past the fireball, thinning as it goes.
+      `<circle r="${n(R * 0.4)}" fill="none" stroke="#fff1a8" stroke-width="6" opacity="0">` +
+      `<animate attributeName="r" values="${n(R * 0.4)};${n(R * 1.35)}" calcMode="spline" keySplines="0.2 0.7 0.4 1" begin="${begin}" dur="0.32s" fill="freeze"/>` +
+      `<animate attributeName="opacity" values="0.8;0" begin="${begin}" dur="0.32s" fill="freeze"/>` +
+      `<animate attributeName="stroke-width" values="6;1" begin="${begin}" dur="0.32s" fill="freeze"/></circle></g>`
     )
   }
   if (fx.kind === 'score') {
@@ -1653,6 +1660,8 @@ export function animation(rec: Recording, v: View = BASE_VIEW, from = 0): string
   skip = Math.max(0, Math.min(TICK_MS, from))
   const details: AnimDetail[] = [
     { stride: 1, sparks: 120, art: 8, pellets: 200 },
+    // Full stride keeps the motion smoothest: shed particles before keys.
+    { stride: 1, sparks: 50, art: 6, pellets: 100 },
     { stride: 2, sparks: 60, art: 4, pellets: 120 },
     { stride: 3, sparks: 30, art: 2, pellets: 60 },
     { stride: 4, sparks: 0, art: 1, pellets: 30 },
