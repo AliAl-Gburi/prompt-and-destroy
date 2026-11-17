@@ -736,10 +736,57 @@ function room(
 // ---------------------------------------------------------------------------
 // Levels
 
-type Level = { title: string; shots: number; build: (g: Game) => void }
+/** A level: its name, its shots (by default enough for the bugs it holds), and how it is built. */
+type Level = { title: string; shots?: number; build: (g: Game) => void }
+
+/** Shots a level of `bugs` bugs gets when it names none: one for every three, two to spare. */
+function shotsFor(bugs: number): number {
+  return Math.min(6, 2 + Math.ceil(bugs / 3))
+}
+
+/**
+ * A bunker: two thick stone walls, a bug sheltering between them and a heavy
+ * roof across. Hard to knock down; easier to burn, shock or lob into from above
+ * once the roof is off. Answers the roof's top.
+ */
+function bunker(g: Game, cx: number, bottom: number, w: number, h: number, roof: BlockMaterial = 'stone'): number {
+  block(g, 'stone', cx - w / 2 + 0.35, bottom, 0.7, h)
+  block(g, 'stone', cx + w / 2 - 0.35, bottom, 0.7, h)
+  bug(g, cx, bottom)
+  block(g, roof, cx, bottom + h, w + 0.3, 0.4)
+
+  return bottom + h + 0.4
+}
+
+/**
+ * A room whose slab reaches `reach` past each post, a bug perched on either
+ * end: knock one post and the slab tips both off. Answers the slab's top.
+ */
+function overhang(g: Game, cx: number, bottom: number, w: number, h: number, mat: BlockMaterial, reach: number, slab: BlockMaterial = mat): number {
+  block(g, mat, cx - w / 2 + 0.2, bottom, 0.4, h)
+  block(g, mat, cx + w / 2 - 0.2, bottom, 0.4, h)
+  bug(g, cx, bottom)
+  block(g, slab, cx, bottom + h, w + reach * 2, 0.3)
+  const top = bottom + h + 0.3
+  bug(g, cx - w / 2 - reach + 0.5, top)
+  bug(g, cx + w / 2 + reach - 0.5, top)
+
+  return top
+}
+
+/** A heap of square blocks, `rows` high, each row one block narrower; answers its top. */
+function heap(g: Game, cx: number, rows: number, size: number, matOf: (row: number) => BlockMaterial): number {
+  for (let row = 0; row < rows; row++) {
+    const n = rows - row
+    for (let i = 0; i < n; i++) block(g, matOf(row), cx - ((n - 1) * size) / 2 + i * size, row * size, size, size)
+  }
+
+  return rows * size
+}
 
 const LEVELS: Level[] = [
   {
+    // One wooden room: learn to fling.
     title: 'Squash the bugs',
     shots: 3,
     build: g => {
@@ -749,6 +796,7 @@ const LEVELS: Level[] = [
     },
   },
   {
+    // Glass breaks at a touch, so the glass room falls to one good hit.
     title: 'Glass houses',
     shots: 3,
     build: g => {
@@ -762,58 +810,67 @@ const LEVELS: Level[] = [
     },
   },
   {
+    // Stone shrugs off blows: a bunker with a lookout on its roof, and a glass hut behind.
     title: 'The stone keep',
     shots: 4,
     build: g => {
       bug(g, 15, 0)
       room(g, 15, 0, 2.4, 1.4, 'stone', 'wood')
-      bug(g, 19.5, 0)
-      let top = room(g, 19.5, 0, 3, 1.6, 'stone')
+      let top = bunker(g, 19.5, 0, 3, 1.2)
       bug(g, 19.5, top)
       top = room(g, 19.5, top, 2.2, 1.3, 'wood')
       bug(g, 19.5, top)
-      bug(g, 23.5, 0)
+      bug(g, 23.6, 0)
+      room(g, 23.6, 0, 1.8, 1.2, 'glass')
     },
   },
   {
-    title: 'Skyscraper',
+    // All timber: it burns, and floors with balconies topple when a post goes.
+    title: 'The timber tower',
     shots: 4,
     build: g => {
-      let top = 0
-      const mats: BlockMaterial[] = ['stone', 'wood', 'glass', 'wood']
-      for (let i = 0; i < mats.length; i++) {
-        bug(g, 18, top)
-        top = room(g, 18, top, 3 - i * 0.2, 1.3, mats[i]!)
-      }
+      bug(g, 14, 0)
+      room(g, 14, 0, 2, 1.3, 'wood')
+      let top = overhang(g, 18.5, 0, 2.6, 1.4, 'wood', 0.7)
+      top = room(g, 18.5, top, 2.4, 1.3, 'wood')
+      bug(g, 18.5, top)
+      top = room(g, 18.5, top, 2, 1.2, 'wood', 'glass')
+      bug(g, 18.5, top)
+      top = bunker(g, 23.2, 0, 2.2, 1.1, 'wood')
+    },
+  },
+  {
+    // Everything at once: a stone-footed pyramid, a bunker and a glass lookout on stilts.
+    title: 'The citadel',
+    shots: 5,
+    build: g => {
+      bug(g, 13.6, 0)
+      let top = room(g, 13.6, 0, 1.8, 2.2, 'glass', 'wood')
+      bug(g, 13.6, top)
+      top = heap(g, 18, 4, 0.9, row => (row === 0 ? 'stone' : row % 2 ? 'wood' : 'glass'))
       bug(g, 18, top)
-      block(g, 'wood', 14.5, 0, 0.5, 2.2)
-      block(g, 'wood', 21.5, 0, 0.5, 2.2)
-    },
-  },
-  {
-    title: 'The pyramid',
-    shots: 4,
-    build: g => {
-      const size = 0.9
-      for (let row = 0; row < 5; row++) {
-        const n = 5 - row
-        for (let i = 0; i < n; i++) {
-          const x = 18 - ((n - 1) * size) / 2 + i * size
-          const mat: BlockMaterial = row === 0 ? 'stone' : row % 2 ? 'wood' : 'glass'
-          block(g, mat, x, row * size, size, size)
-        }
-      }
-      bug(g, 18, 5 * size)
-      bug(g, 13.8, 0)
-      bug(g, 22.4, 0)
-      room(g, 22.4, 0, 1.8, 1.2, 'glass')
+      top = bunker(g, 22.6, 0, 2.6, 1.2, 'glass')
+      top = room(g, 22.6, top, 2.2, 1.2, 'wood')
+      bug(g, 22.6, top)
     },
   },
 ]
 
-/** A level past the handmade ones: towers drawn from a seeded generator. */
+/** How a generated level leans: its name, and which materials its builders draw. */
+const THEMES: { name: string; mats: BlockMaterial[] }[] = [
+  { name: 'Bug nest', mats: ['wood', 'glass', 'stone', 'wood'] },
+  { name: 'Timber yard', mats: ['wood', 'wood', 'wood', 'glass'] },
+  { name: 'Glass works', mats: ['glass', 'glass', 'wood', 'stone'] },
+  { name: 'Stone fort', mats: ['stone', 'stone', 'wood', 'glass'] },
+]
+
+/**
+ * A level past the handmade ones, from a generator seeded by its number: a
+ * theme, then structures side by side (stacked rooms, bunkers, overhangs,
+ * heaps), more and taller the further on. Shots follow the bugs it holds.
+ */
 function generated(level: number): Level {
-  let seed = level * 2654435761
+  let seed = (level * 2654435761) >>> 0 || 1
   const rnd = () => {
     seed = (seed ^ (seed << 13)) >>> 0
     seed = (seed ^ (seed >>> 17)) >>> 0
@@ -821,27 +878,47 @@ function generated(level: number): Level {
 
     return seed / 4294967296
   }
-  const towers = 2 + Math.floor(rnd() * 2)
-  const mats: BlockMaterial[] = ['wood', 'glass', 'stone', 'wood']
+  const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rnd() * xs.length)]!
+  const theme = pick(THEMES)
+  const mat = () => pick(theme.mats)
+  // Taller and more crowded the further on, to a limit.
+  const tall = Math.min(4, 2 + Math.floor(level / 10))
+  const crowd = Math.min(4, 2 + Math.floor(rnd() * 2) + (level >= 15 ? 1 : 0))
 
   return {
-    title: `Bug nest #${level}`,
-    shots: 3 + Math.ceil(towers / 2),
+    title: `${theme.name} #${level}`,
     build: g => {
-      // Towers side by side from x = 12, each a little apart, never touching.
-      let left = 12 + rnd() * 1.5
-      for (let t = 0; t < towers; t++) {
-        const base = 2.4 + rnd() * 0.8
-        const cx = left + base / 2
-        if (cx + base / 2 > WORLD_W - 1) break
-        const floors = 1 + Math.floor(rnd() * 3)
+      // Structures side by side from x = 12, a gap between, none past the world's edge.
+      let left = 12 + rnd() * 1.2
+      for (let t = 0; t < crowd; t++) {
+        const kind = pick(['rooms', 'rooms', 'bunker', 'overhang', 'heap'] as const)
+        const base = 2.2 + rnd() * 0.8
+        const reach = kind === 'overhang' ? 0.6 + rnd() * 0.3 : 0
+        const span = kind === 'heap' ? 3 * 0.85 : base + reach * 2
+        if (left + span > WORLD_W - 0.8) break
+        const cx = left + span / 2
         let top = 0
-        for (let f = 0; f < floors; f++) {
+        if (kind === 'bunker') {
+          top = bunker(g, cx, 0, base, 1 + rnd() * 0.4, rnd() < 0.5 ? 'stone' : mat())
+        } else if (kind === 'overhang') {
+          top = overhang(g, cx, 0, base, 1.2 + rnd() * 0.4, mat(), reach)
+        } else if (kind === 'heap') {
+          const m = [mat(), mat(), mat()]
+          top = heap(g, cx, 3, 0.85, row => m[row]!)
           bug(g, cx, top)
-          top = room(g, cx, top, base - f * 0.25, 1.2 + rnd() * 0.5, mats[Math.floor(rnd() * mats.length)]!)
+          top = -1
         }
-        if (rnd() > 0.4) bug(g, cx, top)
-        left = cx + base / 2 + 1 + rnd() * 1.5
+        // Rooms stacked on whatever stands there, each a little narrower.
+        if (top >= 0) {
+          const floors = kind === 'rooms' ? 1 + Math.floor(rnd() * tall) : kind === 'bunker' ? Math.floor(rnd() * 2) : 0
+          const width = kind === 'rooms' ? base : Math.min(base, 2.2)
+          for (let f = 0; f < floors; f++) {
+            bug(g, cx, top)
+            top = room(g, cx, top, width - f * 0.25, 1.1 + rnd() * 0.5, mat())
+          }
+          if (floors > 0 && (kind !== 'rooms' || rnd() > 0.4)) bug(g, cx, top)
+        }
+        left = cx + span / 2 + 0.9 + rnd() * 1.2
       }
     },
   }
@@ -901,8 +978,6 @@ export function loadLevel(g: Game, level: number): void {
   g.level = level
   g.title = spec.title
   g.levelStartScore = g.score
-  g.shots = spec.shots
-  g.maxShots = spec.shots
   g.bodies = []
   g.arbiters = new Map()
   g.joints = []
@@ -922,6 +997,8 @@ export function loadLevel(g: Game, level: number): void {
   const ground = makeBody(g, 'ground', 'ground', WORLD_W / 2, -5, 400, 10, Infinity, 0.8, 0x4a3524)
   ground.r = 400
   spec.build(g)
+  g.shots = spec.shots ?? shotsFor(bugsLeft(g))
+  g.maxShots = g.shots
   setBanner(g, `Level ${level}: ${spec.title}`, 70)
 }
 
@@ -2805,7 +2882,8 @@ function endTurn(g: Game): void {
   } else if (g.shots <= 0) {
     g.best = Math.max(g.best, g.score)
     g.phase = 'lost'
-    setBanner(g, 'Out of shots. The bugs survive... for now.', 90)
+    const left = bugsLeft(g)
+    setBanner(g, `Out of shots. ${left === 1 ? 'One bug survives' : `${left} bugs survive`}... for now.`, 90)
     g.events.push({ type: 'result', level: g.level, score: g.score, won: false })
   } else {
     g.phase = 'waiting'
