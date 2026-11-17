@@ -2155,7 +2155,7 @@ const ASH = [0x5c5c66, 0x8a8a94, 0xff9f1c]
 /** Seconds of exposure a round's hit counts as. */
 const HIT_DOSE = 0.3
 /** How fast heat builds toward catching fire, per second at full heat and full fuel. */
-const KINDLING = 4
+const KINDLING = 3
 /** What carries electricity at least this well passes a shock on. */
 const CARRIES = 0.25
 
@@ -2167,12 +2167,17 @@ function frailty(b: Body): number {
   return b.kind === 'bug' ? 2.5 : 1
 }
 
-/** How hot it is now: alight, as hot as fire; frozen, as cold as ice. */
+/** How hot it is now: alight, the hotter the more it burns; frozen, as cold as ice. */
 function heatOf(b: Body): number {
-  if (b.fire > 0) return 1
+  if (b.fire > 0) return 0.5 + 0.5 * Math.max(b.matter.burns, b.matter.heat)
   if (b.frost > 0) return Math.min(b.matter.heat, -0.5)
 
   return b.matter.heat
+}
+
+/** What it has left to burn: what has burnt is charred, and has less. */
+function fuel(b: Body): number {
+  return b.matter.burns * Math.max(0, 1 - b.decay)
 }
 
 function isWet(b: Body): boolean {
@@ -2226,8 +2231,8 @@ function expose(g: Game, b: Body, e: Exposure, dose: number): void {
     if (b.frost > 0) b.frost = Math.max(0, b.frost - h * dose * 4)
     if (m.melts > 0) b.decay += 0.5 * h * m.melts * dose
     if (b.soak > 0) b.soak = Math.max(0, b.soak - h * dose * 3)
-    else if (!isWet(b) && b.frost <= 0 && b.fire <= 0 && m.burns >= 0.05) {
-      b.kindle += KINDLING * h * m.burns * dose
+    else if (!isWet(b) && b.frost <= 0 && b.fire <= 0 && fuel(b) >= 0.1) {
+      b.kindle += KINDLING * h * fuel(b) * dose
       if (b.kindle >= 1) ignite(g, b)
     }
     // Scalded.
@@ -2248,7 +2253,7 @@ function expose(g: Game, b: Body, e: Exposure, dose: number): void {
 function ignite(g: Game, b: Body): void {
   b.kindle = 0
   if (b.fire > 0 || b.dead) return
-  b.fire = 1.5 + 5 * b.matter.burns
+  b.fire = 1 + 3.5 * fuel(b)
   if (b.matter.explodes >= 0.05 && b.fuse < 0) b.fuse = 0.15 + (1 - b.matter.explodes) * 1.1
   burst(g, b.x, b.y, 6, FIRE, 2.5)
   if (b.kind === 'shot' && b.spec && !b.shard) setBanner(g, `${b.spec.name} caught fire!`, 30)
@@ -2337,8 +2342,8 @@ function jolt(g: Game, b: Body, power: number, dose: number): void {
   b.zap = Math.max(b.zap, 0.2)
   if (b.kind === 'bug') b.decay += 1.2 * power * frailty(b) * dose
   if (b.matter.explodes >= 0.05 && !isWet(b)) b.fuse = b.fuse < 0 ? 0.05 : Math.min(b.fuse, 0.05)
-  else if (!isWet(b) && b.fire <= 0 && b.matter.burns >= 0.05) {
-    b.kindle += KINDLING * power * b.matter.burns * dose
+  else if (!isWet(b) && b.fire <= 0 && fuel(b) >= 0.1) {
+    b.kindle += 0.5 * KINDLING * power * fuel(b) * dose
     if (b.kindle >= 1) ignite(g, b)
   }
 }
@@ -2376,7 +2381,10 @@ function stepMatter(g: Game): void {
     const m = b.matter
     if (b.fire > 0) {
       b.fire = Math.max(0, b.fire - DT)
-      b.decay += 0.42 * Math.max(0.1, m.burns) * frailty(b) * DT
+      const burnt = 0.45 * Math.max(0.1, m.burns) * frailty(b) * DT
+      b.decay += burnt
+      // Charred, it breaks at less of a knock.
+      if (Number.isFinite(b.strength)) b.wear += burnt * b.strength
       const top = b.y + Math.min(b.hh, b.r) * 0.6
       if (Math.random() < 0.18) {
         particle(g, 'ember', b.x + (Math.random() - 0.5) * b.hw * 1.6, top, (Math.random() - 0.5) * 1.2, 1.5 + Math.random() * 1.5, 0.5 + Math.random() * 0.5, FIRE[Math.floor(Math.random() * 3)]!, 0.06)

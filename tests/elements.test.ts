@@ -162,15 +162,42 @@ test('fire spreads through wood that touches, and not through stone', () => {
   expect(until(h, () => legs.some(l => l.fire > 0), 150)).toBeGreaterThan(0)
 })
 
-test('what burns burns away, and the turn waits for it', () => {
+test('what burns is charred, the turn waits for it, and a knock then breaks it', () => {
   const g = level(1)
   const post = blocks(g, 'wood').find(b => b.x < 16 && b.hh > 0.5)!
+  const other = blocks(g, 'wood').find(b => b.x > 16 && b.hh > 0.5)!
   put(g, TORCH, 13.5, 0.4)
   loose(g, HOT, post.x - 1, post.y, 15, 0)
   loose(g, HOT, post.x - 1, post.y + 0.2, 15, 0)
   expect(until(g, () => post.fire > 0, 10)).toBeGreaterThan(0)
-  expect(until(g, () => post.dead || g.phase !== 'flying', 400)).toBeGreaterThan(0)
+  // The turn runs on while it burns.
+  expect(until(g, () => post.fire === 0, 400)).toBeGreaterThan(0)
+  expect(g.phase).toBe('flying')
+  // Burnt once, it is mostly eaten away, and has too little left to light again.
+  expect(post.decay).toBeGreaterThan(0.6)
+  loose(g, HOT, post.x - 1, post.y, 15, 0)
+  for (let i = 0; i < 5; i++) tick(g)
+  expect(post.fire).toBe(0)
+  // A knock a sound post shrugs off breaks a charred one.
+  const KNOCK = drop({}, { punch: 1 })
+  loose(g, KNOCK, other.x + 1, other.y, -15, 0)
+  loose(g, KNOCK, post.x - 1, post.y, 15, 0)
+  for (let i = 0; i < 5; i++) tick(g)
   expect(post.dead).toBe(true)
+  expect(other.dead).toBe(false)
+})
+
+test('a fire burns what it reaches but does not by itself clear a wooden room', () => {
+  // Level 1: three planks of wood and two bugs; a torch flung into its left post.
+  const g = level(1)
+  const post = blocks(g, 'wood').find(b => b.x < 16 && b.hh > 0.5)!
+  const torch = put(g, TORCH, post.x - post.hw - 1.5, 0.6)
+  torch.vx = 10
+  expect(until(g, () => post.fire > 0, 120)).toBeGreaterThan(0)
+  until(g, () => g.phase !== 'flying', 900)
+  expect(g.phase).not.toBe('flying')
+  expect(g.phaseTime).toBeLessThan(14)
+  expect(g.bodies.filter(b => b.kind === 'bug' && !b.dead).length).toBeGreaterThan(0)
 })
 
 test('water puts fire out, and what is soaked will not light', () => {
