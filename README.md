@@ -27,7 +27,8 @@ start a new Claude Code session.
 - Type in the Forge field and press Enter to make your next shot.
 - Drag anywhere on the playfield to aim, release to fling. Or click the playfield and use
   ↑↓ for angle, ←→ for power, space to fling.
-- Five handmade levels, then endless generated ones. Progress and best score are kept.
+- Five handmade levels, then endless generated ones in four styles (bug nests, timber
+  yards, glass works, stone forts). Progress and best score are kept.
 
 ## What the Forge decides
 
@@ -37,8 +38,9 @@ start a new Claude Code session.
   sticky (glues itself to the first thing it hits), magnetic (pulls blocks toward it),
   piercing (punches through wood and glass).
 - **Ability** (click or press space mid-air, at most one): explode, split into three,
-  rocket, grow to nearly double size, dive straight down, boomerang back, vortex
-  (a whirlpool that drags blocks in), or shoot what the object fires, sprays or breathes.
+  rocket, grow to nearly double size, dive straight down, boomerang (whip back fast and
+  flat at the height you click, through a tower you overshot), vortex (a whirlpool that
+  drags blocks in), or shoot what the object fires, sprays or breathes.
 - **Matter**: what it is made of and carries, on nine scales: heat (freezing to burning),
   how readily it burns, explodes and melts, how wet it is, the live electricity it carries,
   how well it conducts, how corrosive it is, and how readily corrosion eats it. Whatever
@@ -51,8 +53,8 @@ fire, the wood, stone and glass, and the bugs. One set of laws works between any
 things that touch, whatever they are; nothing is decided by name.
 
 - Heat sets alight what burns, thaws what is frozen, melts what melts and dries what is wet.
-  What burns is eaten away, and is as hot as fire while it burns, so fire spreads to what
-  touches it.
+  Burning things are as hot as fire, so fire spreads to what touches them. What has burnt
+  is left charred: blackened, weaker, and with nothing left to catch fire again.
 - What explodes goes off a moment after it is lit, or at once when shocked. Its blast is hot.
 - Cold puts fire out and freezes things, wet ones fastest. What is frozen is brittle and
   breaks at a fraction of the knock.
@@ -70,9 +72,11 @@ shocks the bug at the other end.
 ## How it draws
 
 On the desktop the game is drawn as SVG (`hooks/vector.ts`): the Forge's drawing spins
-through the air, blocks crack as they wear, and the bugs watch your shot. The game's
-`Client` lies invisible over the picture, taking the drags, clicks and keys and posting
-each frame. In the terminal the same game is drawn in half-block cells.
+through the air, blocks crack as they wear, and the bugs watch your shot. A shot's whole
+flight is worked out when it leaves the sling and played as one SMIL animation, keyed only
+where the motion needs it, so even a busy flight keeps every frame, spark and drawing.
+The game's `Client` lies invisible over the picture, taking the drags, clicks and keys and
+posting each frame. In the terminal the same game is drawn in half-block cells.
 
 Each forged object is one Sonnet call billed to your Claude Code session; it takes a few
 seconds. If the model can't be reached, the Forge improvises from the words.

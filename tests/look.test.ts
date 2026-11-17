@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import {
   INERT,
+  elementCode,
   fire,
   matterOf,
   newGame,
@@ -218,5 +219,101 @@ test('a blast sends a shock ring out past its fireball', () => {
   const svg = animation(fly(g).rec)
   expect(svg).toContain('fill="none" stroke="#fff1a8"')
   expect(svg).toContain('calcMode="spline" keySplines="0.2 0.7 0.4 1"')
+  wellFormed(svg)
+})
+
+/** Every keyed animation in `svg`: one time per value, from 0 to 1, each later than the last. */
+function keysValid(svg: string): number {
+  let keyed = 0
+  for (const tag of svg.match(/<animate(?:Transform)?\b[^>]*keyTimes="[^"]*"[^>]*>/g) ?? []) {
+    const values = /values="([^"]*)"/.exec(tag)![1]!.split(';')
+    const times = /keyTimes="([^"]*)"/.exec(tag)![1]!.split(';').map(Number)
+    expect(times.length).toBe(values.length)
+    expect(times[0]).toBe(0)
+    expect(times[times.length - 1]).toBe(1)
+    for (let i = 1; i < times.length; i++) expect(times[i]!).toBeGreaterThan(times[i - 1]!)
+    keyed++
+  }
+
+  return keyed
+}
+
+test('a busy flight keeps every key it needs and only those, within what a post carries at full detail', () => {
+  // Level 24's tall glass tower hit by a swarm that splits: a busy flight.
+  const g = newGame(24, 0)
+  settleNow(g)
+  g.loaded = thing('Bees', { width: 0.7, height: 0.7, density: 2, ability: 'split' })
+  g.phase = 'aiming'
+  g.aim = { x: 1.9, y: 1.3 }
+  fire(g)
+  for (let i = 0; i < 18; i++) tick(g)
+  trigger(g)
+  const rec = fly(g).rec
+  const svg = animation(rec)
+  expect(svg.length).toBeLessThan(92_000)
+  // Bodies are keyed tick by tick where they curve, and not where they glide.
+  expect(keysValid(svg)).toBeGreaterThan(10)
+  wellFormed(svg)
+  // The bar along the top drawn once, its numbers each time they change.
+  expect(svg.split('PROMPT &amp; DESTROY').length - 1).toBe(1)
+  const scores = new Set(rec.hud.map(h => /Score <tspan font-weight="700">(\d+)/.exec(h)?.[1]))
+  expect(scores.size).toBeGreaterThan(1)
+  expect(svg.split('>Score <tspan').length - 1).toBe(scores.size)
+  // One bug, defined once and used by every bug.
+  expect(svg.split('id="pd-bug"').length - 1).toBe(1)
+  expect(svg.split('<use href="#pd-bug"/>').length - 1).toBe(rec.tracks.filter(t => t.body.kind === 'bug').length)
+})
+
+test('rounds fired are keyed with exact times, so none jumps along its path', () => {
+  const GUN = thing('Gun', {
+    width: 0.6,
+    height: 0.4,
+    ability: 'shoot',
+    power: { name: 'Fire', from: [0.3, 0.1], facing: 'right', aim: 'target', round: { ...ROUND, width: 0.04, height: 0.015, count: 7, every: 0.053, spread: 2, speed: 38, gravity: 0.05, punch: 2.2, life: 0.8, turn: 'point' } },
+  })
+  const g = flung(1, GUN, { x: 1.8, y: 1.4 })
+  for (let i = 0; i < 10; i++) tick(g)
+  trigger(g)
+  const svg = animation(fly(g).rec)
+  // Each key's own time, rising: rounded to a tenth, neighbouring keys shared one and the round jumped.
+  keysValid(svg)
+  wellFormed(svg)
+})
+
+test('what burnt stays blackened after the fire is out', () => {
+  const g = flung(4, thing('Torch', { width: 0.3, height: 0.8, matter: matterOf({ heat: 1 }) }), { x: 1, y: 1 })
+  const post = g.bodies.find(b => b.kind === 'block' && b.mat === 'wood')!
+  post.fire = 1
+  for (let i = 0; i < 40; i++) tick(g)
+  expect(post.fire).toBe(0)
+  expect(post.char).toBeGreaterThan(0.12)
+  expect(elementCode(post)).toContain('c')
+  // The still frame tints it, and the animation keeps the tint from when it charred on.
+  expect(vector(g).svg).toMatch(/fill="#160b04" stroke="none"[^>]* opacity="0\.\d+"/)
+})
+
+test('a boomerang turned behind a tower comes back fast and flat through it', () => {
+  const g = flung(1, thing('Boomerang', { width: 0.7, height: 0.25, density: 1.2, ability: 'boomerang' }), { x: 2.2, y: 0.9 })
+  for (let i = 0; i < 12; i++) tick(g)
+  const shot = g.bodies.find(b => b.kind === 'shot')!
+  const [x0, y0] = [shot.x, shot.y]
+  expect(trigger(g)).toBe(true)
+  expect(shot.vx).toBeLessThan(-10)
+  expect(shot.vy).toBe(0)
+  for (let i = 0; i < 6; i++) tick(g)
+  // A fifth of a second on: well back the way it came, at about the height it turned.
+  expect(shot.x).toBeLessThan(x0 - 2)
+  expect(Math.abs(shot.y - y0)).toBeLessThan(0.3)
+})
+
+test('a body that breaks takes its cracks, tints and glow with it', () => {
+  // Shown "from a moment on", each sets its own visibility, which a hidden
+  // parent cannot override: the body must go entirely, display and all.
+  const g = flung(2, thing('Piano'), { x: 1.9, y: 1.25 })
+  const rec = fly(g).rec
+  const died = rec.tracks.filter(t => t.died >= 0).length
+  expect(died).toBeGreaterThan(0)
+  const svg = animation(rec)
+  expect(svg.split('<set attributeName="display" to="none"').length - 1).toBe(died + rec.pellets.filter(p => p.died >= 0).length)
   wellFormed(svg)
 })

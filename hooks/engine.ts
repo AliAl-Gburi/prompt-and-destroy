@@ -184,6 +184,8 @@ export type Body = ShapeInfo & {
   fuse: number
   /** How much of it fire, melting and corrosion have eaten, 0 to 1: gone at 1. */
   decay: number
+  /** How much of that fire did, 0 to 1: how blackened it looks. */
+  char: number
 }
 
 type Contact = {
@@ -674,6 +676,7 @@ function addBody(
     corrode: 0,
     fuse: -1,
     decay: 0,
+    char: 0,
   }
   g.bodies.push(body)
 
@@ -2205,11 +2208,16 @@ function dive(g: Game, src: Body): void {
   shout(g, src, 'Dive!')
 }
 
-/** Turns round and flies back the way it came, spinning. */
+/**
+ * Whips round and comes back fast and flat at the height it turned, spinning:
+ * flung past a tower and turned behind it, it sweeps back through it.
+ */
 function boomerang(g: Game, src: Body): void {
   const dir = src.vx >= 0 ? -1 : 1
-  src.vx = dir * Math.max(8, Math.abs(src.vx) * 1.1)
-  src.vy = Math.max(src.vy, 0) + 4
+  src.vx = dir * Math.max(11, Math.abs(src.vx) * 1.25)
+  src.vy = 0
+  src.noGravity = 0.55
+  src.drag = 0
   src.av = -dir * 18
   ring(g, src.x, src.y, 1, 0xffffff, 0.25)
   shout(g, src, 'Boomerang!')
@@ -2287,6 +2295,7 @@ function inherit(from: Body, to: Body): void {
   to.corrode = from.corrode
   to.fuse = from.fuse
   to.decay = from.decay
+  to.char = from.char
 }
 
 function givesOff(b: Body): Exposure | null {
@@ -2467,6 +2476,7 @@ function stepMatter(g: Game): void {
       b.fire = Math.max(0, b.fire - DT)
       const burnt = 0.45 * Math.max(0.1, m.burns) * frailty(b) * DT
       b.decay += burnt
+      b.char = Math.min(1, b.char + burnt)
       // Charred, it breaks at less of a knock.
       if (Number.isFinite(b.strength)) b.wear += burnt * b.strength
       const top = b.y + Math.min(b.hh, b.r) * 0.6
@@ -2498,11 +2508,16 @@ function stepMatter(g: Game): void {
 }
 
 /**
- * What is at work on a body, a letter each, for drawing: alight (f), lit to
- * go off (x), soaked (w), frozen (i), shocked (z), being eaten (a).
+ * What is at work on a body, a letter each, for drawing: blackened by fire
+ * (c), alight (f), lit to go off (x), soaked (w), frozen (i), shocked (z),
+ * being eaten (a).
  */
+/** Burnt this much, a thing looks blackened. */
+const CHARRED = 0.12
+
 export function elementCode(b: Body): string {
   let s = ''
+  if (b.char >= CHARRED) s += 'c'
   if (b.fire > 0) s += 'f'
   if (b.fuse >= 0) s += 'x'
   if (b.soak > 0) s += 'w'
@@ -3403,6 +3418,7 @@ function tint(b: Body, c: number): number {
   if (b.frost > 0) return mix(c, 0xdff6ff, 0.6)
   if (b.corrode > 0) return mix(c, 0x8cff3a, 0.4)
   if (b.soak > 0) return mix(c, 0x3fa7ff, 0.3)
+  if (b.char >= CHARRED) return mix(c, 0x160b04, 0.2 + 0.5 * b.char)
 
   return c
 }

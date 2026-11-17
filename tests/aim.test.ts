@@ -132,3 +132,25 @@ test('in a tall pane the arc still meets the level at the picture\'s foot', () =
   expect(target.row).toBeLessThan(40)
   expect(cells.every(c => c.row >= 0 && c.col >= 0 && c.col < 60)).toBe(true)
 })
+
+test('a big shot pulled low flies along the arc drawn for it', () => {
+  // So big that, pulled low, it leaves the pouch higher than the pouch is.
+  const big: ShotSpec = { ...BALL, id: 'big', width: 1.6, height: 1.6 }
+  for (const aim of [
+    { x: 1.5, y: 1.8 },
+    { x: 2.2, y: 0.9 },
+  ]) {
+    const g = newGame(1, 0)
+    settleNow(g)
+    setForge(g, { status: 'ready', item: big, note: null })
+    g.aim = aim
+    const arc = trajectory(g).points
+    expect(fire(g)).toBe(true)
+    const shot = g.bodies.find(b => b.kind === 'shot')!
+    // A point of the arc for every tick of the flight: the shot is on it.
+    for (let k = 0; k < 10; k++) {
+      tick(g)
+      expect(Math.hypot(shot.x - arc[k]!.x, shot.y - arc[k]!.y)).toBeLessThan(0.05)
+    }
+  }
+})

@@ -47,7 +47,7 @@ The JSON
   "rocket": self-propelled or very fast things (rocket, jet, cheetah). A burst of speed in a straight line.
   "grow": things that inflate, expand or get bigger (balloon, sponge, pufferfish, an ego). It swells to nearly double its size and weight.
   "dive": things that plunge or swoop (anvil, hawk, meteor, diving bell). It stops and slams straight down.
-  "boomerang": things that come back (boomerang, yo-yo, frisbee, karma). It turns around and flies back.
+  "boomerang": things that come back (boomerang, yo-yo, frisbee, karma). It whips around and flies back, fast and flat at the height it turned.
   "vortex": things that suck or spin (black hole, tornado, vacuum cleaner, whirlpool, drain). It becomes a whirlpool that drags blocks into it.
 - power: the ability's name on screen and, for "shoot", where the object fires from and what it fires. For the other abilities give only {"name": string}.
   name: 1 to 3 words, at most 20 characters, in the object's own terms.

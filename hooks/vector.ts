@@ -9,13 +9,11 @@
 
 import {
   BUG,
-  GRAVITY,
   LAUNCHER_X,
   MATERIALS,
   TICK_MS,
   TIP_L,
   TIP_R,
-  VERB,
   WORLD_H,
   WORLD_W,
   bugsLeft,
@@ -150,10 +148,11 @@ function place(x: number, y: number, a: number): string {
 let scenery = ''
 
 function hillPath(f: (x: number) => number): string {
+  // One line command, its points following: a point every half meter is smooth at this size.
   let d = `M-4 ${n(sy(-1))}L-4 ${n(sy(f(view.x0)))}`
-  for (let x = view.x0; x <= view.x1 + 0.01; x += 0.25) d += `L${n(sx(x))} ${n(sy(f(x)))}`
+  for (let x = view.x0; x <= view.x1 + 0.01; x += 0.5) d += ` ${n(sx(x))} ${n(sy(f(x)))}`
 
-  return `${d}L${VIEW_W + 4} ${n(sy(f(view.x1)))}L${VIEW_W + 4} ${n(sy(-1))}Z`
+  return `${d} ${VIEW_W + 4} ${n(sy(f(view.x1)))} ${VIEW_W + 4} ${n(sy(-1))}Z`
 }
 
 function drawScenery(): string {
@@ -166,20 +165,23 @@ function drawScenery(): string {
     parts.push(`<rect x="0" y="${n((i * sy(0)) / bands)}" width="${VIEW_W}" height="${n(sy(0) / bands + 1)}" fill="${hexColor(c)}"/>`)
   }
   // Stars, a few of them twinkling crosses, as many to a patch of sky however much there is.
+  // Each in one of four brightnesses, drawn together, the color said once.
   const stars = Math.round((70 * VIEW_W * sy(3.5)) / (WORLD_W * S * (WORLD_H - 4.5) * S))
+  const lit = ['', '', '', '']
+  let crosses = ''
   for (let i = 0; i < stars; i++) {
     const x = hash(i) * VIEW_W
     const y = hash(i + 101) * sy(3.5)
     const r = 0.6 + hash(i + 202) * 1.2
-    const o = 0.35 + hash(i + 303) * 0.6
+    const o = Math.min(3, Math.floor(hash(i + 303) * 4))
     if (i % 11 === 0) {
       const k = r * 3
-      parts.push(
-        `<path d="M${n(x - k)} ${n(y)}H${n(x + k)}M${n(x)} ${n(y - k)}V${n(y + k)}" stroke="#dfe6ff" stroke-width="1" opacity="${n(o)}"/>`,
-      )
+      crosses += `M${n(x - k)} ${n(y)}H${n(x + k)}M${n(x)} ${n(y - k)}V${n(y + k)}`
     }
-    parts.push(`<circle cx="${n(x)}" cy="${n(y)}" r="${n(r)}" fill="#dfe6ff" opacity="${n(o)}"/>`)
+    lit[o] += `<circle cx="${n(x)}" cy="${n(y)}" r="${n(r)}"/>`
   }
+  lit.forEach((dots, o) => parts.push(`<g fill="#dfe6ff" opacity="${n(0.42 + o * 0.17)}">${dots}</g>`))
+  if (crosses) parts.push(`<path d="${crosses}" stroke="#dfe6ff" stroke-width="1" opacity="0.7"/>`)
   // The moon with a halo and craters, high on the right, under the bar along the top.
   const mx = VIEW_W - 160
   const my = 44 + 34 * view.k
@@ -219,16 +221,16 @@ function drawScenery(): string {
   )
   // Ground: dirt with pebbles, a grass edge with tufts.
   const top = sy(0)
-  parts.push(`<rect x="0" y="${n(top)}" width="${VIEW_W}" height="${n(VIEW_H - top)}" fill="#4a3524"/>`)
-  for (let i = 0; i < Math.round(40 * across); i++) {
-    parts.push(
-      `<ellipse cx="${n(hash(i + 404) * VIEW_W)}" cy="${n(top + 14 + hash(i + 505) * (VIEW_H - top - 18))}" rx="${n(2 + hash(i + 606) * 3)}" ry="${n(1.5 + hash(i + 707) * 1.5)}" fill="#3d2b1d"/>`,
-    )
-  }
   parts.push(
+    `<rect x="0" y="${n(top)}" width="${VIEW_W}" height="${n(VIEW_H - top)}" fill="#4a3524"/>`,
     `<rect x="0" y="${n(top + 24)}" width="${VIEW_W}" height="${n(Math.max(0, VIEW_H - top - 24))}" fill="#3f2d1f"/>`,
-    `<rect x="0" y="${n(top)}" width="${VIEW_W}" height="9" fill="#4c8a3f"/>`,
   )
+  // Pebbles over both bands of dirt.
+  let pebbles = ''
+  for (let i = 0; i < Math.round(40 * across); i++) {
+    pebbles += `<ellipse cx="${n(hash(i + 404) * VIEW_W)}" cy="${n(top + 14 + hash(i + 505) * (VIEW_H - top - 18))}" rx="${n(2 + hash(i + 606) * 3)}" ry="${n(1.5 + hash(i + 707) * 1.5)}"/>`
+  }
+  parts.push(`<g fill="#33241a">${pebbles}</g>`, `<rect x="0" y="${n(top)}" width="${VIEW_W}" height="9" fill="#4c8a3f"/>`)
   let tufts = ''
   for (let x = 4; x < VIEW_W; x += 9 + hash(x) * 10) {
     const h = 4 + hash(x + 1) * 6
@@ -365,6 +367,23 @@ function drawBug(b: Body, look: { x: number; y: number } | null): string {
 }
 
 /** A round purple beetle in its own frame, its eyes on `look` (a world point). */
+/** Everything of a bug but where it looks, defined once a picture for every bug to use. */
+const BUG_DEF =
+  `<g id="pd-bug">` +
+  `<path d="${[-11, -3, 6].map(x => `M${x} 9l-3 7M${x + 6} 9l3 7`).join('')}" stroke="#2e1236" stroke-width="2.8" stroke-linecap="round"/>` +
+  `<path d="M-6 -12Q-10 -21 -15 -20M6 -12Q10 -21 15 -20" stroke="#4a1f55" stroke-width="2" fill="none" stroke-linecap="round"/>` +
+  `<circle cx="-15" cy="-20" r="2.6" fill="#ffd166" stroke="#2e1236" stroke-width="1.2"/><circle cx="15" cy="-20" r="2.6" fill="#ffd166" stroke="#2e1236" stroke-width="1.2"/>` +
+  `<ellipse cx="0" cy="1" rx="17.5" ry="14" fill="${hexColor(BUG.color)}" stroke="#2e1236" stroke-width="2.8"/>` +
+  `<path d="M-12 7Q0 13 12 7" stroke="${hexColor(BUG.edge)}" stroke-width="1.6" fill="none"/>` +
+  `<circle cx="-9" cy="6" r="2.4" fill="#9a3fb0"/><circle cx="10" cy="5" r="2" fill="#9a3fb0"/><circle cx="1" cy="9" r="1.6" fill="#9a3fb0"/>` +
+  `<ellipse cx="-7" cy="-8" rx="6" ry="3" fill="#ffffff" opacity="0.25"/>` +
+  `<circle cx="-6" cy="-4" r="5.4" fill="#ffffff" stroke="#2e1236" stroke-width="1.6"/><circle cx="6" cy="-4" r="5.4" fill="#ffffff" stroke="#2e1236" stroke-width="1.6"/></g>`
+
+/** The bug drawing's definition, for a picture with bugs in it. */
+function bugDefs(any: boolean): string {
+  return any ? `<defs>${BUG_DEF}</defs>` : ''
+}
+
 function bugLook(b: Body, look: { x: number; y: number } | null): string {
   const c = Math.cos(b.a)
   const s = Math.sin(b.a)
@@ -378,23 +397,9 @@ function bugLook(b: Body, look: { x: number; y: number } | null): string {
     ex = (c * dx + s * dy) / d
     ey = -(-s * dx + c * dy) / d
   }
-  const legs = [-11, -3, 6]
-    .map(x => `M${x} 9l-3 7M${x + 6} 9l3 7`)
-    .join('')
-  const eye = (x: number) =>
-    `<circle cx="${x}" cy="-4" r="5.4" fill="#ffffff" stroke="#2e1236" stroke-width="1.6"/><circle cx="${n(x + ex * 2.3)}" cy="${n(-4 + ey * 2.3)}" r="2.6" fill="#1b0f22"/>`
+  const pupil = (x: number) => `<circle cx="${n(x + ex * 2.3)}" cy="${n(-4 + ey * 2.3)}" r="2.6"/>`
 
-  return (
-    `<path d="${legs}" stroke="#2e1236" stroke-width="2.8" stroke-linecap="round"/>` +
-    `<path d="M-6 -12Q-10 -21 -15 -20M6 -12Q10 -21 15 -20" stroke="#4a1f55" stroke-width="2" fill="none" stroke-linecap="round"/>` +
-    `<circle cx="-15" cy="-20" r="2.6" fill="#ffd166" stroke="#2e1236" stroke-width="1.2"/><circle cx="15" cy="-20" r="2.6" fill="#ffd166" stroke="#2e1236" stroke-width="1.2"/>` +
-    `<ellipse cx="0" cy="1" rx="17.5" ry="14" fill="${hexColor(BUG.color)}" stroke="#2e1236" stroke-width="2.8"/>` +
-    `<path d="M-12 7Q0 13 12 7" stroke="${hexColor(BUG.edge)}" stroke-width="1.6" fill="none"/>` +
-    `<circle cx="-9" cy="6" r="2.4" fill="#9a3fb0"/><circle cx="10" cy="5" r="2" fill="#9a3fb0"/><circle cx="1" cy="9" r="1.6" fill="#9a3fb0"/>` +
-    `<ellipse cx="-7" cy="-8" rx="6" ry="3" fill="#ffffff" opacity="0.25"/>` +
-    eye(-6) +
-    eye(6)
-  )
+  return `<use href="#pd-bug"/><g fill="#1b0f22">${pupil(-6)}${pupil(6)}</g>`
 }
 
 // ---------------------------------------------------------------------------
@@ -441,7 +446,7 @@ function shotLook(spec: ShotSpec | null, info: ShapeInfo, color: number, scale: 
 // look defined once per picture for every body showing it to use.
 
 /** The letters of `elementCode`, in the order they are drawn, bottom up. */
-const ELEMENTS = 'wiafzx'
+const ELEMENTS = 'cwiafzx'
 
 const ELEMENT_DEFS: Record<string, string> = {
   f:
@@ -504,9 +509,19 @@ function elementLayer(b: Body, letter: string): { turned: string; near: string }
   const low = Math.min(b.hh, b.hw, b.r)
   const use = (id: string, transform: string) => `<use href="#${id}" transform="${transform}"/>`
   switch (letter) {
+    case 'c':
+      // Blackened, the more the more it burnt; soot streaks on the worst.
+      return {
+        turned:
+          overShape(b, '#160b04', Math.round((0.18 + 0.5 * b.char) * 100) / 100) +
+          (b.char > 0.45 && b.kind === 'block'
+            ? `<path d="M${n(-b.hw * S * 0.6)} ${n(-b.hh * S * 0.3)}l${n(b.hw * S * 0.35)} ${n(b.hh * S * 0.5)}M${n(b.hw * S * 0.1)} ${n(-b.hh * S * 0.5)}l${n(b.hw * S * 0.3)} ${n(b.hh * S * 0.7)}" stroke="#000000" stroke-width="2" stroke-linecap="round" opacity="0.35"/>`
+            : ''),
+        near: '',
+      }
     case 'f':
       return {
-        turned: overShape(b, '#1a0d05', 0.35),
+        turned: overShape(b, '#1a0d05', 0.15),
         near: use(b.id % 2 ? 'pd-fire2' : 'pd-fire', `translate(0 ${n(low * 0.4 * S)}) scale(${n((reach * 0.75 * S) / 50)} ${n(((reach * 0.6 + 0.4) * 1.2 * S) / 100)})`),
       }
     case 'x':
@@ -890,7 +905,7 @@ function frame(g: Game, detail: Detail): string {
   const look = flying ? { x: flying.x, y: flying.y } : g.loaded ? pouch : null
   let artLeft = detail.art
   const ready = g.phase === 'flying' && !g.abilityUsed && g.activeAbility !== 'none'
-  parts.push(elementDefs(g.bodies.map(elementCode)))
+  parts.push(elementDefs(g.bodies.map(elementCode)), bugDefs(g.bodies.some(b => b.kind === 'bug')))
   parts.push(drawPath(g))
   for (const b of g.bodies) {
     if (b.kind === 'ground') continue
@@ -1324,7 +1339,12 @@ export type Recording = {
   look: { x: number; y: number } | null
 }
 
-type AnimDetail = { stride: number; sparks: number; art: number; pellets: number }
+/**
+ * How much of a flight an animation draws: every `stride`th tick looked at
+ * for keys, each drawn within `tol` pixels of where it was; at most so many
+ * particles, Forge drawings and rounds.
+ */
+type AnimDetail = { stride: number; tol: number; sparks: number; art: number; pellets: number }
 
 /** An animation past this many characters draws with less detail (a post holds 100,000). */
 const ANIM_BUDGET = 92_000
@@ -1335,12 +1355,62 @@ let skip = 0
 const at = (tick: number) => `${Math.round(tick * TICK_MS - skip) / 1000}s`
 const show = (tick: number) => `<set attributeName="visibility" to="visible" begin="${at(tick)}" fill="freeze"/>`
 const hide = (tick: number) => `<set attributeName="visibility" to="hidden" begin="${at(tick)}" fill="freeze"/>`
+/**
+ * Gone from `tick` on, all of it: what is shown inside by `during` sets its
+ * own visibility, which a hidden parent cannot override, so a body that
+ * breaks takes no display with it, and leaves no crack or glow hanging.
+ */
+const gone = (tick: number) => `<set attributeName="display" to="none" begin="${at(tick)}" fill="freeze"/>`
 
 /** `inner`, shown from tick `from` until tick `until` (-1: to the end). */
 function during(from: number, until: number, inner: string): string {
   if (from <= 0 && until < 0) return inner
 
   return `<g${from > 0 ? ' visibility="hidden"' : ''}>${from > 0 ? show(from) : ''}${until >= 0 ? hide(until) : ''}${inner}</g>`
+}
+
+/**
+ * A per-tick list of flat markup (the bar along the top, the words) drawn
+ * element by element: each distinct element once, shown for the ticks it is
+ * in, so a score that changes redraws its number and not the whole bar.
+ */
+function layered(list: string[]): string {
+  const ELEMENT = /<(\w+)\b[^>]*\/>|<(\w+)\b[^>]*>[\s\S]*?<\/\2>/g
+  // Markup the split would not wholly account for is drawn whole, run by run.
+  if (list.some(markup => (markup.match(ELEMENT) ?? []).join('') !== markup)) {
+    return runs(list)
+      .filter(r => r.value)
+      .map(r => during(r.from, r.until, r.value))
+      .join('')
+  }
+  const order: string[] = []
+  const on = new Map<string, boolean[]>()
+  list.forEach((markup, t) => {
+    for (const m of markup.match(ELEMENT) ?? []) {
+      let ticks = on.get(m)
+      if (!ticks) {
+        ticks = []
+        on.set(m, ticks)
+        order.push(m)
+      }
+      ticks[t] = true
+    }
+  })
+  let out = ''
+  for (const m of order) {
+    const ticks = on.get(m)!
+    let start = -1
+    for (let t = 0; t <= list.length; t++) {
+      const here = t < list.length && ticks[t] === true
+      if (here && start < 0) start = t
+      if (!here && start >= 0) {
+        out += during(start, t === list.length ? -1 : t, m)
+        start = -1
+      }
+    }
+  }
+
+  return out
 }
 
 /** Runs of equal values in a per-tick list: each value, its first tick and the next run's (-1: the last). */
@@ -1354,6 +1424,59 @@ function runs<T>(list: T[]): { value: T; from: number; until: number }[] {
   })
 
   return out
+}
+
+/** A fraction of an animation's span, as a key time: exact enough for a long flight's ticks. */
+function frac(v: number): string {
+  return String(Math.round(v * 10000) / 10000)
+}
+
+/**
+ * The keys a motion needs, out of the samples at `ticks`: the first, the
+ * last, and every one a straight line between its neighbouring keys would
+ * miss by more than `tol` in any of its values (Ramer, Douglas and Peucker,
+ * over time). A flight's arc keeps a key every few ticks, a body at rest or
+ * turning steadily between knocks only its ends.
+ */
+function keysFor(ticks: number[], value: (i: number) => number[], tol: number): number[] {
+  const keep = ticks.map((_, k) => k === 0 || k === ticks.length - 1)
+  const spans: [number, number][] = [[0, ticks.length - 1]]
+  while (spans.length > 0) {
+    const [a, b] = spans.pop()!
+    if (b - a < 2) continue
+    const va = value(ticks[a]!)
+    const vb = value(ticks[b]!)
+    let worst = 0
+    let at = -1
+    for (let k = a + 1; k < b; k++) {
+      const t = (ticks[k]! - ticks[a]!) / (ticks[b]! - ticks[a]!)
+      const v = value(ticks[k]!)
+      for (let c = 0; c < v.length; c++) {
+        const miss = Math.abs(v[c]! - (va[c]! + (vb[c]! - va[c]!) * t))
+        if (miss > worst) {
+          worst = miss
+          at = k
+        }
+      }
+    }
+    if (worst > tol) {
+      keep[at] = true
+      spans.push([a, at], [at, b])
+    }
+  }
+
+  return ticks.filter((_, k) => keep[k])
+}
+
+/**
+ * A motion keyed at `keys` (ticks, from `from` to `from + span`): its values
+ * and, unless the keys are evenly spaced, the time of each.
+ */
+function keyed(keys: number[], from: number, span: number, value: (i: number) => string): string {
+  const step = keys.length > 1 ? keys[1]! - keys[0]! : 0
+  const even = keys.every((t, k) => t === keys[0]! + k * step)
+
+  return `values="${keys.map(value).join(';')}" ${even ? '' : `keyTimes="${keys.map(t => frac((t - from) / span)).join(';')}" `}`
 }
 
 /** At most this many stretches of each element are drawn on one body. */
@@ -1381,20 +1504,23 @@ function trackMarkup(rec: Recording, tr: Track, detail: AnimDetail, art: boolean
     let last = count - 1
     while (last > first && same(last - 1, count - 1)) last--
     const from = first - 1
-    const keys: number[] = []
-    for (let i = from; ; i += detail.stride) {
-      keys.push(Math.min(i, count - 1))
-      if (i >= last) break
-    }
+    const ticks: number[] = []
+    for (let i = from; i < last; i += detail.stride) ticks.push(i)
+    ticks.push(last)
+    const span = last - from
     const begin = at(tr.born + from)
-    const dur = `${Math.round((keys.length - 1) * detail.stride * TICK_MS) / 1000}s`
-    const moves = keys.some(i => Math.abs(X(i) - X(from)) >= 0.05 || Math.abs(Y(i) - Y(from)) >= 0.05)
-    const turns = keys.some(i => Math.abs(D(i) - D(from)) >= 0.05)
+    const dur = `${Math.round(span * TICK_MS) / 1000}s`
+    const moves = ticks.some(i => Math.abs(X(i) - X(from)) >= 0.05 || Math.abs(Y(i) - Y(from)) >= 0.05)
+    const turns = ticks.some(i => Math.abs(D(i) - D(from)) >= 0.05)
     if (moves) {
-      move = `<animateTransform attributeName="transform" type="translate" values="${keys.map(i => `${n(X(i))} ${n(Y(i))}`).join(';')}" begin="${begin}" dur="${dur}" fill="freeze"/>`
+      const keys = keysFor(ticks, i => [X(i), Y(i)], detail.tol)
+      move = `<animateTransform attributeName="transform" type="translate" ${keyed(keys, from, span, i => `${n(X(i))} ${n(Y(i))}`)}begin="${begin}" dur="${dur}" fill="freeze"/>`
     }
     if (turns) {
-      turn = `<animateTransform attributeName="transform" type="rotate" values="${keys.map(i => n(D(i))).join(';')}" begin="${begin}" dur="${dur}" fill="freeze"/>`
+      // As far round as moves its rim the same fraction of a pixel.
+      const rim = Math.max(4, tr.body.r * S)
+      const keys = keysFor(ticks, i => [D(i)], Math.min(3 * detail.tol, ((detail.tol * 1.3) / rim) * (180 / Math.PI)))
+      turn = `<animateTransform attributeName="transform" type="rotate" ${keyed(keys, from, span, i => n(D(i)))}begin="${begin}" dur="${dur}" fill="freeze"/>`
     }
   }
 
@@ -1457,7 +1583,7 @@ function trackMarkup(rec: Recording, tr: Track, detail: AnimDetail, art: boolean
   }
 
   const born = tr.born > 0 ? ` visibility="hidden"` : ''
-  const sets = (tr.born > 0 ? show(tr.born) : '') + (tr.died >= 0 ? hide(tr.died) : '')
+  const sets = (tr.born > 0 ? show(tr.born) : '') + (tr.died >= 0 ? gone(tr.died) : '')
   const deg = D(0)
 
   return (
@@ -1471,7 +1597,7 @@ function trackMarkup(rec: Recording, tr: Track, detail: AnimDetail, art: boolean
  * at its last, timed to the tick, so it reaches what it struck as it is
  * hidden. Fire and gas swell and fade over their lives; a star spins.
  */
-function pelletMarkup(tr: PelletTrack, stride: number, ids: RoundIds): string {
+function pelletMarkup(tr: PelletTrack, stride: number, tol: number, ids: RoundIds): string {
   const p = tr.poses
   const count = p.length / 2
   const X = (i: number) => sx(p[2 * i]!)
@@ -1479,15 +1605,12 @@ function pelletMarkup(tr: PelletTrack, stride: number, ids: RoundIds): string {
   const r = tr.round
   let move = ''
   if (count > 1) {
-    const keys: number[] = []
-    for (let i = 0; i < count - 1; i += stride) keys.push(i)
-    keys.push(count - 1)
+    const ticks: number[] = []
+    for (let i = 0; i < count - 1; i += stride) ticks.push(i)
+    ticks.push(count - 1)
     const last = count - 1
-    move =
-      `<animateTransform attributeName="transform" type="translate" values="${keys.map(i => `${n(X(i))} ${n(Y(i))}`).join(';')}" ` +
-      // Evenly spaced keys need no times of their own.
-      (last % stride === 0 ? '' : `keyTimes="${keys.map(i => n(i / last)).join(';')}" `) +
-      `begin="${at(tr.born)}" dur="${Math.round(last * TICK_MS) / 1000}s" fill="freeze"/>`
+    const keys = keysFor(ticks, i => [X(i), Y(i)], tol * 1.5)
+    move = `<animateTransform attributeName="transform" type="translate" ${keyed(keys, 0, last, i => `${n(X(i))} ${n(Y(i))}`)}begin="${at(tr.born)}" dur="${Math.round(last * TICK_MS) / 1000}s" fill="freeze"/>`
   }
   let look = roundLook(r, tr.color, ids)
   if (r.fade) {
@@ -1500,7 +1623,7 @@ function pelletMarkup(tr: PelletTrack, stride: number, ids: RoundIds): string {
   else if (r.turn === 'point' && Math.abs(tr.heading) >= 0.5) look = `<g transform="rotate(${n(tr.heading)})">${look}</g>`
   const trail = r.trail ? `<g transform="rotate(${n(tr.heading)})">${trailLook(r)}</g>` : ''
   const hidden = tr.born > 0 ? ' visibility="hidden"' : ''
-  const sets = (tr.born > 0 ? show(tr.born) : '') + (tr.died >= 0 ? hide(tr.died) : '')
+  const sets = (tr.born > 0 ? show(tr.born) : '') + (tr.died >= 0 ? gone(tr.died) : '')
 
   return `<g transform="translate(${n(X(0))} ${n(Y(0))})"${hidden}>${sets}${move}${trail}${look}</g>`
 }
@@ -1522,27 +1645,29 @@ function sparkMarkup(s0: Spark): string {
   const nKeys = s0.kind === 'chunk' ? 6 : 4
   const keys = Array.from({ length: nKeys }, (_, k) => pts[Math.round((k * ticks) / (nKeys - 1))]!)
   const dur = `${Math.round(ticks * TICK_MS) / 1000}s`
-  const begin = at(s0.born)
+  const time = `begin="${at(s0.born)}" dur="${dur}"`
   const c = hexColor(s0.color)
-  const move = `<animateTransform attributeName="transform" type="translate" values="${keys.map(([kx, ky]) => `${n(sx(kx))} ${n(sy(ky))}`).join(';')}" begin="${begin}" dur="${dur}" fill="freeze"/>`
-  const fade = (from: number, values = `${n(from)};0`) => `<animate attributeName="opacity" values="${values}" begin="${begin}" dur="${dur}" fill="freeze"/>`
+  // Whole pixels: a particle is a speck, and its markup adds up.
+  const move = `<animateTransform attributeName="transform" type="translate" values="${keys.map(([kx, ky]) => `${Math.round(sx(kx))} ${Math.round(sy(ky))}`).join(';')}" ${time}/>`
+  const fade = (values: string) => `<animate attributeName="opacity" values="${values}" ${time}/>`
   let look: string
   if (s0.kind === 'smoke') {
     const r0 = s0.size * S * 0.5
-    look = `<circle r="${n(r0)}" fill="${c}" opacity="0"><animate attributeName="r" values="${n(r0)};${n(r0 * 2.2)}" begin="${begin}" dur="${dur}" fill="freeze"/>${fade(0.38, '0.38;0.26;0')}</circle>`
+    look = `<circle r="${n(r0)}" fill="${c}" opacity="0"><animate attributeName="r" values="${n(r0)};${n(r0 * 2.2)}" ${time}/>${fade('0.38;0.26;0')}</circle>`
   } else if (s0.kind === 'chunk') {
     const w = s0.size * S
     const h = w * 0.6
-    const turn = n((-s0.spin * ticks * TICK_S * 180) / Math.PI)
+    const turn = Math.round((-s0.spin * ticks * TICK_S * 180) / Math.PI)
     look =
-      `<g opacity="0">${fade(1, '1;1;1;0')}<rect x="${n(-w / 2)}" y="${n(-h / 2)}" width="${n(w)}" height="${n(h)}" rx="1" fill="${c}" stroke="#1b1b2b" stroke-width="0.8">` +
-      `<animateTransform attributeName="transform" type="rotate" values="0;${turn}" begin="${begin}" dur="${dur}" fill="freeze"/></rect></g>`
+      `<g opacity="0">${fade('1;1;1;0')}<rect x="${n(-w / 2)}" y="${n(-h / 2)}" width="${n(w)}" height="${n(h)}" rx="1" fill="${c}" stroke="#1b1b2b" stroke-width="0.8">` +
+      `<animateTransform attributeName="transform" type="rotate" values="0;${turn}" ${time}/></rect></g>`
   } else {
     const r = Math.max(1.1, s0.size * S * 0.6)
-    look = `<circle r="${n(r)}" fill="${c}" opacity="0">${fade(1)}</circle>`
+    look = `<circle r="${n(r)}" fill="${c}" opacity="0">${fade(`${n(Math.min(1, s0.life * 2.2))};0`)}</circle>`
   }
 
-  return `<g transform="translate(${n(sx(s0.x))} ${n(sy(s0.y))})">${move}${look}</g>`
+  // Unseen before it begins and once it ends: no place to start from, nothing held at the end.
+  return `<g>${move}${look}</g>`
 }
 
 /** A ring or a vortex from the tick it appeared, as far through its life as it already was. */
@@ -1625,7 +1750,14 @@ function pathMarkup(rec: Recording): string {
 }
 
 function animate(rec: Recording, detail: AnimDetail): string {
-  const parts: string[] = [`<g>${shakes(rec)}`, drawScenery(), drawEmptyBand(), elementDefs(rec.tracks.flatMap(t => t.states)), pathMarkup(rec)]
+  const parts: string[] = [
+    `<g>${shakes(rec)}`,
+    drawScenery(),
+    drawEmptyBand(),
+    elementDefs(rec.tracks.flatMap(t => t.states)),
+    bugDefs(rec.tracks.some(t => t.body.kind === 'bug')),
+    pathMarkup(rec),
+  ]
   let artLeft = detail.art
   for (const tr of rec.tracks) {
     const art = tr.body.kind === 'shot' && artLeft > 0 && !!tr.body.spec?.art
@@ -1637,15 +1769,14 @@ function animate(rec: Recording, detail: AnimDetail): string {
   if (detail.pellets > 0) {
     const rounds = roundDefs(rec.pellets.map(t => t.round))
     parts.push(rounds.defs)
-    for (let i = 0; i < rec.pellets.length; i += share) parts.push(pelletMarkup(rec.pellets[Math.floor(i)]!, detail.stride * 2, rounds.ids))
+    for (let i = 0; i < rec.pellets.length; i += share) parts.push(pelletMarkup(rec.pellets[Math.floor(i)]!, detail.stride, detail.tol, rounds.ids))
   }
   for (const e of rec.effects) parts.push(effectMarkup(e.born, e.fx))
   // Past the budget, an even share of the sparks.
   const step = rec.sparks.length > detail.sparks ? rec.sparks.length / Math.max(1, detail.sparks) : 1
   if (detail.sparks > 0) for (let i = 0; i < rec.sparks.length; i += step) parts.push(sparkMarkup(rec.sparks[Math.floor(i)]!))
   parts.push('</g>')
-  for (const r of runs(rec.hud)) parts.push(during(r.from, r.until, r.value))
-  for (const r of runs(rec.words)) if (r.value) parts.push(during(r.from, r.until, r.value))
+  parts.push(layered(rec.hud), layered(rec.words))
 
   return svgDoc(parts.join(''), true)
 }
@@ -1658,14 +1789,17 @@ function animate(rec: Recording, detail: AnimDetail): string {
 export function animation(rec: Recording, v: View = BASE_VIEW, from = 0): string {
   useView(v)
   skip = Math.max(0, Math.min(TICK_MS, from))
+  // Each rung gives up less than the next. Particles, rounds and drawings go
+  // first; then the keys are let stray a little further from the flight,
+  // which keeps every one the motion needs; only then are ticks skipped.
   const details: AnimDetail[] = [
-    { stride: 1, sparks: 120, art: 8, pellets: 200 },
-    // Full stride keeps the motion smoothest: shed particles before keys.
-    { stride: 1, sparks: 50, art: 6, pellets: 100 },
-    { stride: 2, sparks: 60, art: 4, pellets: 120 },
-    { stride: 3, sparks: 30, art: 2, pellets: 60 },
-    { stride: 4, sparks: 0, art: 1, pellets: 30 },
-    { stride: 6, sparks: 0, art: 0, pellets: 12 },
+    { stride: 1, tol: 0.6, sparks: 120, art: 8, pellets: 200 },
+    { stride: 1, tol: 0.6, sparks: 60, art: 6, pellets: 100 },
+    { stride: 1, tol: 0.8, sparks: 30, art: 4, pellets: 50 },
+    { stride: 1, tol: 1.4, sparks: 15, art: 3, pellets: 30 },
+    { stride: 1, tol: 2.5, sparks: 0, art: 2, pellets: 20 },
+    { stride: 2, tol: 4, sparks: 0, art: 1, pellets: 12 },
+    { stride: 4, tol: 6, sparks: 0, art: 0, pellets: 8 },
   ]
   let svg = ''
   for (const d of details) {
