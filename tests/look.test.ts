@@ -210,3 +210,13 @@ test('what the Forge made springs out of the forge in a flash, and settles', () 
   for (let i = 0; i < 16; i++) tick(g)
   expect(vector(g).svg).not.toContain('type="scale" values="0.15;')
 })
+
+test('a blast sends a shock ring out past its fireball', () => {
+  const g = flung(2, thing('Bomb', { width: 0.6, height: 0.6, shape: 'circle', ability: 'explode' }), { x: 1.85, y: 1.3 })
+  for (let i = 0; i < 26; i++) tick(g)
+  expect(trigger(g)).toBe(true)
+  const svg = animation(fly(g).rec)
+  expect(svg).toContain('fill="none" stroke="#fff1a8"')
+  expect(svg).toContain('calcMode="spline" keySplines="0.2 0.7 0.4 1"')
+  wellFormed(svg)
+})
