@@ -1999,6 +1999,13 @@ export function pouchPosition(g: Game): { x: number; y: number } {
   return { x: POUCH.x - g.aim.x, y: POUCH.y - g.aim.y }
 }
 
+/** Where a shot leaves the pouch: never with its bottom in the ground. */
+function launchPoint(g: Game, spec: ShotSpec): { x: number; y: number } {
+  const p = pouchPosition(g)
+
+  return { x: p.x, y: Math.max(p.y, spec.height / 2 + 0.05) }
+}
+
 function launchVelocity(g: Game, spec: ShotSpec): { vx: number; vy: number } {
   const k = (LAUNCH_SPEED * launchSpeedFactor(specMass(spec))) / MAX_PULL
 
@@ -2031,7 +2038,8 @@ export function trajectory(g: Game): { points: { x: number; y: number }[]; hit: 
   const spec = g.loaded
   if (!spec || Math.hypot(g.aim.x, g.aim.y) < 0.3) return { points: [], hit: null }
   const v = launchVelocity(g, spec)
-  const p = pouchPosition(g)
+  // From where fire() will spawn it, or a big shot's arc starts too low.
+  const p = launchPoint(g, spec)
   let x = p.x
   let y = p.y
   let vx = v.vx
@@ -2079,9 +2087,8 @@ export function fire(g: Game): boolean {
   const spec = g.loaded
   if (g.phase !== 'aiming' || !spec) return false
   if (Math.hypot(g.aim.x, g.aim.y) < 0.3) return false
-  const p = pouchPosition(g)
-  const y = Math.max(p.y, spec.height / 2 + 0.05)
-  const b = spawnShot(g, spec, p.x, y, 1)
+  const p = launchPoint(g, spec)
+  const b = spawnShot(g, spec, p.x, p.y, 1)
   const v = launchVelocity(g, spec)
   b.vx = v.vx
   b.vy = v.vy
