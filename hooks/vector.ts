@@ -150,10 +150,10 @@ function place(x: number, y: number, a: number): string {
 let scenery = ''
 
 function hillPath(f: (x: number) => number): string {
-  let d = `M0 ${n(sy(-1))}`
+  let d = `M-4 ${n(sy(-1))}L-4 ${n(sy(f(view.x0)))}`
   for (let x = view.x0; x <= view.x1 + 0.01; x += 0.25) d += `L${n(sx(x))} ${n(sy(f(x)))}`
 
-  return `${d}L${VIEW_W} ${n(sy(-1))}Z`
+  return `${d}L${VIEW_W + 4} ${n(sy(f(view.x1)))}L${VIEW_W + 4} ${n(sy(-1))}Z`
 }
 
 function drawScenery(): string {
@@ -186,7 +186,8 @@ function drawScenery(): string {
   parts.push(
     `<circle cx="${mx}" cy="${n(my)}" r="70" fill="#f4f1de" opacity="0.05"/>`,
     `<circle cx="${mx}" cy="${n(my)}" r="48" fill="#f4f1de" opacity="0.07"/>`,
-    `<circle cx="${mx}" cy="${n(my)}" r="32" fill="#f4f1de"/>`,
+    `<circle cx="${mx}" cy="${n(my)}" r="32" fill="#f4f1de" stroke="#cfc8a4" stroke-width="2.5"/>`,
+    `<path d="M${mx + 12} ${n(my - 26)}A32 32 0 0 1 ${mx + 12} ${n(my + 26)}A26 26 0 0 0 ${mx + 12} ${n(my - 26)}Z" fill="#d9d2b0" opacity="0.6"/>`,
     `<circle cx="${mx - 10}" cy="${n(my - 8)}" r="7" fill="#e3ddbf"/>`,
     `<circle cx="${mx + 11}" cy="${n(my + 10)}" r="5" fill="#e3ddbf"/>`,
     `<circle cx="${mx + 9}" cy="${n(my - 14)}" r="3.5" fill="#e3ddbf"/>`,
@@ -212,8 +213,9 @@ function drawScenery(): string {
   }
   // Two ranges of hills, as the terminal draws them.
   parts.push(
-    `<path d="${hillPath(x => 2.2 + 0.9 * Math.sin(x * 0.23 + 1.3) + 0.5 * Math.sin(x * 0.61))}" fill="#223259"/>`,
-    `<path d="${hillPath(x => 1.1 + 0.6 * Math.sin(x * 0.37 + 4) + 0.3 * Math.sin(x * 1.1 + 2))}" fill="#1a2747"/>`,
+    `<path d="${hillPath(x => 3.4 + 1.1 * Math.sin(x * 0.15 + 0.4) + 0.4 * Math.sin(x * 0.5 + 1))}" fill="#26386a" opacity="0.55"/>`,
+    `<path d="${hillPath(x => 2.2 + 0.9 * Math.sin(x * 0.23 + 1.3) + 0.5 * Math.sin(x * 0.61))}" fill="#223259" stroke="#34497e" stroke-width="2"/>`,
+    `<path d="${hillPath(x => 1.1 + 0.6 * Math.sin(x * 0.37 + 4) + 0.3 * Math.sin(x * 1.1 + 2))}" fill="#1a2747" stroke="#2a3b66" stroke-width="2"/>`,
   )
   // Ground: dirt with pebbles, a grass edge with tufts.
   const top = sy(0)
@@ -223,19 +225,27 @@ function drawScenery(): string {
       `<ellipse cx="${n(hash(i + 404) * VIEW_W)}" cy="${n(top + 14 + hash(i + 505) * (VIEW_H - top - 18))}" rx="${n(2 + hash(i + 606) * 3)}" ry="${n(1.5 + hash(i + 707) * 1.5)}" fill="#3d2b1d"/>`,
     )
   }
-  parts.push(`<rect x="0" y="${n(top)}" width="${VIEW_W}" height="9" fill="#4c8a3f"/>`)
+  parts.push(
+    `<rect x="0" y="${n(top + 24)}" width="${VIEW_W}" height="${n(Math.max(0, VIEW_H - top - 24))}" fill="#3f2d1f"/>`,
+    `<rect x="0" y="${n(top)}" width="${VIEW_W}" height="9" fill="#4c8a3f"/>`,
+  )
   let tufts = ''
   for (let x = 4; x < VIEW_W; x += 9 + hash(x) * 10) {
     const h = 4 + hash(x + 1) * 6
     tufts += `M${n(x)} ${n(top + 1)}l2 ${n(-h)}l2 ${n(h)}`
   }
-  parts.push(`<path d="${tufts}" fill="#5fa34f"/>`, `<rect x="0" y="${n(top + 8)}" width="${VIEW_W}" height="2" fill="#3a6b30"/>`)
+  parts.push(`<path d="${tufts}" fill="#5fa34f" stroke="#1d3318" stroke-width="1" stroke-linejoin="round"/>`,
+    `<rect x="0" y="${n(top + 2)}" width="${VIEW_W}" height="2" fill="#7cc46a"/>`,
+    `<rect x="0" y="${n(top + 8)}" width="${VIEW_W}" height="2.5" fill="#1d3318"/>`,
+  )
   // The launcher's post and fork, outlined.
   const fork = `M${n(sx(LAUNCHER_X))} ${n(sy(0))}V${n(sy(1.4))}M${n(sx(LAUNCHER_X))} ${n(sy(1.4))}L${n(sx(TIP_L.x))} ${n(sy(TIP_L.y))}M${n(sx(LAUNCHER_X + 0.05))} ${n(sy(1.4))}L${n(sx(TIP_R.x))} ${n(sy(TIP_R.y))}`
   parts.push(
-    `<path d="${fork}" stroke="#2e1d0e" stroke-width="13" stroke-linecap="round" fill="none"/>`,
-    `<path d="${fork}" stroke="#7a5230" stroke-width="8" stroke-linecap="round" fill="none"/>`,
-    `<path d="M${n(sx(LAUNCHER_X) - 2)} ${n(sy(0.1))}V${n(sy(1.3))}" stroke="#9a6a3f" stroke-width="2" stroke-linecap="round"/>`,
+    `<path d="${fork}" stroke="#1c1108" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`,
+    `<path d="${fork}" stroke="#8a5d33" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`,
+    `<path d="M${n(sx(LAUNCHER_X) - 2)} ${n(sy(0.1))}V${n(sy(1.3))}" stroke="#b07c4a" stroke-width="2" stroke-linecap="round"/>`,
+    `<path d="M${n(sx(LAUNCHER_X) - 6)} ${n(sy(0.55))}h12M${n(sx(LAUNCHER_X) - 6)} ${n(sy(0.55) + 5)}h12" stroke="#3b2414" stroke-width="2.5" stroke-linecap="round"/>`,
+    ...[TIP_L, TIP_R].map(t => `<circle cx="${n(sx(t.x))}" cy="${n(sy(t.y) + 6)}" r="4.5" fill="#5a3a1f" stroke="#1c1108" stroke-width="2"/>`),
   )
   scenery = parts.join('')
 
@@ -304,11 +314,11 @@ function blockLook(b: Body, cracks: string): string {
   const x0 = -w / 2
   const y0 = -h / 2
   const rect = (fill: string, stroke: string, extra = '') =>
-    `<rect x="${n(x0)}" y="${n(y0)}" width="${n(w)}" height="${n(h)}" rx="2.5" fill="${fill}" stroke="${stroke}" stroke-width="2"${extra}/>`
+    `<rect x="${n(x0)}" y="${n(y0)}" width="${n(w)}" height="${n(h)}" rx="3" fill="${fill}" stroke="${stroke}" stroke-width="2.6"${extra}/>`
   let body = ''
   if (b.mat === 'wood') {
     const m = MATERIALS.wood
-    body += rect(hexColor(m.color), hexColor(m.edge))
+    body += rect(hexColor(m.color), '#3a2412')
     // Grain along the long side, and a knot on big pieces.
     let grain = ''
     const long = w > h
@@ -322,7 +332,7 @@ function blockLook(b: Body, cracks: string): string {
     body += `<rect x="${n(x0 + 2)}" y="${n(y0 + 2)}" width="${n(w - 4)}" height="${n(Math.min(4, h * 0.2))}" rx="1.5" fill="#ffffff" opacity="0.12"/>`
   } else if (b.mat === 'stone') {
     const m = MATERIALS.stone
-    body += rect(hexColor(m.color), hexColor(m.edge))
+    body += rect(hexColor(m.color), '#2c3036')
     // Mortar: courses and staggered joints.
     let mortar = ''
     const course = 18
@@ -337,11 +347,15 @@ function blockLook(b: Body, cracks: string): string {
     body += `<rect x="${n(x0 + 2)}" y="${n(y0 + 2)}" width="${n(w - 4)}" height="${n(Math.min(5, h * 0.25))}" rx="1.5" fill="#ffffff" opacity="0.16"/>`
   } else {
     const m = MATERIALS.glass
-    body += rect(hexColor(m.color), '#d4f4ff', ' fill-opacity="0.42"')
+    body += rect(hexColor(m.color), '#1f5a78', ' fill-opacity="0.42"')
+    body += `<rect x="${n(x0 + 2.5)}" y="${n(y0 + 2.5)}" width="${n(w - 5)}" height="${n(h - 5)}" rx="1.5" fill="none" stroke="#e4f8ff" stroke-width="1.2" opacity="0.7"/>`
     // Two streaks of shine.
     const k = Math.min(w, h)
     body += `<path d="M${n(x0 + k * 0.25)} ${n(-y0 - 3)}L${n(x0 + k * 0.75)} ${n(y0 + 3)}M${n(x0 + k * 0.55)} ${n(-y0 - 3)}L${n(x0 + k * 0.85)} ${n(y0 + k * 0.5)}" stroke="#ffffff" stroke-width="2" stroke-linecap="round" opacity="0.55"/>`
   }
+
+  // A shaded underside, for weight.
+  if (b.mat !== 'glass') body += `<rect x="${n(x0 + 1.5)}" y="${n(-y0 - Math.min(4, h * 0.18) - 1.5)}" width="${n(w - 3)}" height="${n(Math.min(4, h * 0.18))}" rx="1" fill="#000000" opacity="0.18"/>`
 
   return body + cracks
 }
@@ -368,13 +382,13 @@ function bugLook(b: Body, look: { x: number; y: number } | null): string {
     .map(x => `M${x} 9l-3 7M${x + 6} 9l3 7`)
     .join('')
   const eye = (x: number) =>
-    `<circle cx="${x}" cy="-4" r="5.4" fill="#ffffff" stroke="#4a1f55" stroke-width="1.4"/><circle cx="${n(x + ex * 2.3)}" cy="${n(-4 + ey * 2.3)}" r="2.6" fill="#1b0f22"/>`
+    `<circle cx="${x}" cy="-4" r="5.4" fill="#ffffff" stroke="#2e1236" stroke-width="1.6"/><circle cx="${n(x + ex * 2.3)}" cy="${n(-4 + ey * 2.3)}" r="2.6" fill="#1b0f22"/>`
 
   return (
-    `<path d="${legs}" stroke="#4a1f55" stroke-width="2.6" stroke-linecap="round"/>` +
+    `<path d="${legs}" stroke="#2e1236" stroke-width="2.8" stroke-linecap="round"/>` +
     `<path d="M-6 -12Q-10 -21 -15 -20M6 -12Q10 -21 15 -20" stroke="#4a1f55" stroke-width="2" fill="none" stroke-linecap="round"/>` +
-    `<circle cx="-15" cy="-20" r="2.2" fill="#ffd166"/><circle cx="15" cy="-20" r="2.2" fill="#ffd166"/>` +
-    `<ellipse cx="0" cy="1" rx="17.5" ry="14" fill="${hexColor(BUG.color)}" stroke="${hexColor(BUG.edge)}" stroke-width="2.4"/>` +
+    `<circle cx="-15" cy="-20" r="2.6" fill="#ffd166" stroke="#2e1236" stroke-width="1.2"/><circle cx="15" cy="-20" r="2.6" fill="#ffd166" stroke="#2e1236" stroke-width="1.2"/>` +
+    `<ellipse cx="0" cy="1" rx="17.5" ry="14" fill="${hexColor(BUG.color)}" stroke="#2e1236" stroke-width="2.8"/>` +
     `<path d="M-12 7Q0 13 12 7" stroke="${hexColor(BUG.edge)}" stroke-width="1.6" fill="none"/>` +
     `<circle cx="-9" cy="6" r="2.4" fill="#9a3fb0"/><circle cx="10" cy="5" r="2" fill="#9a3fb0"/><circle cx="1" cy="9" r="1.6" fill="#9a3fb0"/>` +
     `<ellipse cx="-7" cy="-8" rx="6" ry="3" fill="#ffffff" opacity="0.25"/>` +
@@ -407,7 +421,7 @@ function shotLook(spec: ShotSpec | null, info: ShapeInfo, color: number, scale: 
     return `<g transform="translate(${n(info.artX * S)} ${n(-info.artY * S)}) scale(${Math.round(k * 1000) / 1000}) translate(${n(-W / 2)} ${n(-H / 2)})">${spec.art}</g>`
   }
   const fill = hexColor(color)
-  const edge = hexColor(shade(color, 0.55))
+  const edge = hexColor(shade(color, 0.35))
   let look = outline(info, fill, edge)
   if (info.shape === 'circle') {
     const r = info.rad * S
@@ -799,7 +813,7 @@ type Detail = { art: number; particles: boolean; arc: boolean; from: { x: number
 /** The band across an empty launcher, drawn once a view. */
 let emptyBand = ''
 function drawEmptyBand(): string {
-  emptyBand ||= `<path d="M${n(sx(TIP_L.x))} ${n(sy(TIP_L.y))}Q${n(sx(LAUNCHER_X))} ${n(sy(TIP_L.y - 0.25))} ${n(sx(TIP_R.x))} ${n(sy(TIP_R.y))}" stroke="#e8b67a" stroke-width="4" fill="none" stroke-linecap="round"/>`
+  emptyBand ||= `<path d="M${n(sx(TIP_L.x))} ${n(sy(TIP_L.y))}Q${n(sx(LAUNCHER_X))} ${n(sy(TIP_L.y - 0.25))} ${n(sx(TIP_R.x))} ${n(sy(TIP_R.y))}" stroke="#1c1108" stroke-width="7" fill="none" stroke-linecap="round"/><path d="M${n(sx(TIP_L.x))} ${n(sy(TIP_L.y))}Q${n(sx(LAUNCHER_X))} ${n(sy(TIP_L.y - 0.25))} ${n(sx(TIP_R.x))} ${n(sy(TIP_R.y))}" stroke="#e8b67a" stroke-width="4" fill="none" stroke-linecap="round"/>`
 
   return emptyBand
 }
@@ -830,7 +844,7 @@ export function hudMarkup(g: Game): string {
 
   const y = n(23 * k)
   let x = 14 * k
-  let out = `<rect x="0" y="0" width="${VIEW_W}" height="${n(34 * k)}" fill="#070b1a" opacity="0.55"/>`
+  let out = `<rect x="0" y="0" width="${VIEW_W}" height="${n(34 * k)}" fill="#070b1a" opacity="0.72"/><rect x="0" y="${n(34 * k)}" width="${VIEW_W}" height="${n(2 * k)}" fill="#ff8a3d" opacity="0.55"/>`
   if (brand) {
     out += `<text x="${n(x)}" y="${y}" font-size="${n(16 * k)}" font-weight="800" fill="#ff8a3d" letter-spacing="1">PROMPT &amp; DESTROY</text>`
     x += brandW
@@ -842,7 +856,7 @@ export function hudMarkup(g: Game): string {
     const cx = n(x + (50 + i * 15) * k)
     out +=
       i < g.shots
-        ? `<circle cx="${cx}" cy="${n(17 * k)}" r="${n(5.5 * k)}" fill="#ffd166"/>`
+        ? `<circle cx="${cx}" cy="${n(17 * k)}" r="${n(5.5 * k)}" fill="#ffd166" stroke="#7a4a00" stroke-width="${n(1.2 * k)}"/>`
         : `<circle cx="${cx}" cy="${n(17 * k)}" r="${n(5 * k)}" fill="none" stroke="#ffd166" stroke-width="${n(1.5 * k)}" opacity="0.6"/>`
   }
   x += shotsW
@@ -866,7 +880,7 @@ function frame(g: Game, detail: Detail): string {
     const to = `M${n(sx(tip.x))} ${n(sy(tip.y))}L${n(sx(pouch.x))} ${n(sy(pouch.y))}`
     const glide = from ? `<animate attributeName="d" from="M${n(sx(tip.x))} ${n(sy(tip.y))}L${n(sx(from.x))} ${n(sy(from.y))}" to="${to}" dur="${dur}" fill="freeze"/>` : ''
 
-    return `<path d="${to}" stroke="${color}" stroke-width="5" stroke-linecap="round">${glide}</path>`
+    return `<path d="${to}" stroke="#1c1108" stroke-width="8" stroke-linecap="round">${glide}</path><path d="${to}" stroke="${color}" stroke-width="4.5" stroke-linecap="round">${glide}</path>`
   }
   if (!g.loaded) parts.push(drawEmptyBand())
   else parts.push(band(TIP_L, '#b98448'))
@@ -928,7 +942,7 @@ function frame(g: Game, detail: Detail): string {
       reveal?.back ?? '',
       `<g${from ? ` transform="translate(${offset})"` : ''}>` +
         (from ? `<animateTransform attributeName="transform" type="translate" from="${offset}" to="0 0" dur="${dur}" fill="freeze"/>` : '') +
-        `<rect x="${n(sx(pouch.x) - 6)}" y="${n(sy(pouch.y) - 7)}" width="12" height="14" rx="3" fill="#5a3a1f" opacity="0.9"/>` +
+        `<rect x="${n(sx(pouch.x) - 6)}" y="${n(sy(pouch.y) - 7)}" width="12" height="14" rx="3" fill="#5a3a1f" stroke="#1c1108" stroke-width="2"/>` +
         `<g transform="${place(pouch.x, pouch.y, 0)}"><g>${reveal?.pop ?? ''}${shotLook(spec, info, color, 1, artLeft > 0)}</g></g></g>`,
       band(TIP_R, '#e8b67a'),
       reveal?.front ?? '',
@@ -1003,7 +1017,7 @@ export function wordsMarkup(g: Game): string {
     const size = Math.min(14 * k, (VIEW_W - 28 * k) / (st.text.length * 0.56))
     const bar = Math.max(26 * k, size * 1.9)
     out +=
-      `<rect x="0" y="${n(VIEW_H - bar)}" width="${VIEW_W}" height="${n(bar)}" fill="#070b1a" opacity="0.5"/>` +
+      `<rect x="0" y="${n(VIEW_H - bar)}" width="${VIEW_W}" height="${n(bar)}" fill="#070b1a" opacity="0.62"/><rect x="0" y="${n(VIEW_H - bar)}" width="${VIEW_W}" height="${n(1.5 * k)}" fill="#e6ecff" opacity="0.12"/>` +
       `<text x="${n(14 * k)}" y="${n(VIEW_H - bar * 0.3)}" font-size="${n(size)}" fill="${st.color}">${esc(st.text)}</text>`
   }
 
