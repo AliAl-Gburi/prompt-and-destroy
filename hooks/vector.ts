@@ -65,6 +65,31 @@ let VIEW_W = WORLD_W * S
 let VIEW_H = WORLD_H * S
 
 /** Draws what follows for this view. */
+/**
+ * The wall clock, in ms, when the picture being drawn was made. Loops that
+ * run all the time (bugs breathing and blinking, clouds drifting, stars
+ * twinkling) begin as far into themselves as this clock is, so every
+ * picture, made whenever and shown over whichever, has them at the same
+ * point: nothing jumps when a flight goes over a frame. 0 until set.
+ */
+let clock = 0
+
+export function useClock(ms: number): void {
+  clock = ms
+}
+
+/** Seconds to the tenth: a loop's period, written as it is reckoned with. */
+function tenths(v: number): number {
+  return Math.round(v * 10) / 10
+}
+
+/** A SMIL begin for a loop of `period` seconds, at the clock's point in it, `shift` seconds along. */
+function loop(period: number, shift = 0): string {
+  const t = (((clock / 1000 + shift) % period) + period) % period
+
+  return `${-Math.round(t * 1000) / 1000}s`
+}
+
 export function useView(v: View): void {
   if (v.x0 === view.x0 && v.x1 === view.x1 && v.y0 === view.y0 && v.y1 === view.y1 && v.k === view.k) return
   view = v
@@ -155,7 +180,54 @@ function hillPath(f: (x: number) => number): string {
   return `${d} ${VIEW_W + 4} ${n(sy(f(view.x1)))} ${VIEW_W + 4} ${n(sy(-1))}Z`
 }
 
+/** The scenery: what never moves, drawn once a view, and what drifts and twinkles over it. */
 function drawScenery(): string {
+  return stillScenery() + ambience()
+}
+
+/**
+ * What moves in the sky, at the clock's point: faint clouds drifting slowly
+ * to and fro, spread over the sky's width and, in a tall one, down it (two
+ * more there, where the world's own sky has no room for them); and a few
+ * stars twinkling.
+ */
+function ambience(): string {
+  const across = VIEW_W / (WORLD_W * S)
+  const bar = 34 * view.k
+  const deep = (sy(4) - bar) / (WORLD_H - 5) / S
+  const clouds: [number, number, number][] = [
+    [190, 92, 120],
+    [560, 58, 90],
+    [700, 140, 150],
+  ]
+  if (deep > 1.6) clouds.push([330, 230, 110], [860, 280, 140])
+  let out = ''
+  clouds.forEach(([x, y, w], i) => {
+    const cx = n(x * across)
+    const cy = n(bar + (y - 34) * Math.max(1, deep))
+    const period = 150 + i * 23
+    out +=
+      `<g><animateTransform attributeName="transform" type="translate" values="0 0;${n(40 + w / 3)} 0;0 0" dur="${period}s" begin="${loop(period, i * 37)}" repeatCount="indefinite"/>` +
+      `<ellipse cx="${cx}" cy="${cy}" rx="${w / 2}" ry="${n(w / 7)}" fill="#c8d4ff" opacity="0.05"/>` +
+      `<ellipse cx="${n(Number(cx) + w / 6)}" cy="${n(Number(cy) - w / 14)}" rx="${n(w / 3.5)}" ry="${n(w / 8)}" fill="#c8d4ff" opacity="0.05"/></g>`
+  })
+  // Twinkling stars, each at its own pace, none over the moon.
+  const mx = VIEW_W - 160
+  const my = 44 + 34 * view.k
+  for (let i = 0; i < Math.round(9 * across); i++) {
+    const x = hash(i + 909) * VIEW_W
+    const y = 40 + hash(i + 919) * Math.max(10, sy(4) - 60)
+    if (Math.hypot(x - mx, y - my) < 90) continue
+    const period = tenths(2.2 + hash(i + 929) * 2.6)
+    out +=
+      `<circle cx="${n(x)}" cy="${n(y)}" r="${n(1 + hash(i + 939) * 0.8)}" fill="#ffffff">` +
+      `<animate attributeName="opacity" values="0.9;0.15;0.9" dur="${n(period)}s" begin="${loop(period, i * 0.7)}" repeatCount="indefinite"/></circle>`
+  }
+
+  return out
+}
+
+function stillScenery(): string {
   if (scenery) return scenery
   const parts: string[] = []
   // Sky in bands, deep blue overhead to dusk at the horizon.
@@ -194,25 +266,8 @@ function drawScenery(): string {
     `<circle cx="${mx + 11}" cy="${n(my + 10)}" r="5" fill="#e3ddbf"/>`,
     `<circle cx="${mx + 9}" cy="${n(my - 14)}" r="3.5" fill="#e3ddbf"/>`,
   )
-  // Faint clouds, spread over the sky's width and, in a tall one, down it:
-  // two more there, where the world's own sky has no room for them.
+  // (The clouds and the twinkling stars move: they are drawn fresh, in `ambience`.)
   const across = VIEW_W / (WORLD_W * S)
-  const bar = 34 * view.k
-  const deep = (sy(4) - bar) / (WORLD_H - 5) / S
-  const clouds: [number, number, number][] = [
-    [190, 92, 120],
-    [560, 58, 90],
-    [700, 140, 150],
-  ]
-  if (deep > 1.6) clouds.push([330, 230, 110], [860, 280, 140])
-  for (const [x, y, w] of clouds) {
-    const cx = n(x * across)
-    const cy = n(bar + (y - 34) * Math.max(1, deep))
-    parts.push(
-      `<ellipse cx="${cx}" cy="${cy}" rx="${w / 2}" ry="${n(w / 7)}" fill="#c8d4ff" opacity="0.05"/>`,
-      `<ellipse cx="${n(Number(cx) + w / 6)}" cy="${n(Number(cy) - w / 14)}" rx="${n(w / 3.5)}" ry="${n(w / 8)}" fill="#c8d4ff" opacity="0.05"/>`,
-    )
-  }
   // Two ranges of hills, as the terminal draws them.
   parts.push(
     `<path d="${hillPath(x => 3.4 + 1.1 * Math.sin(x * 0.15 + 0.4) + 0.4 * Math.sin(x * 0.5 + 1))}" fill="#26386a" opacity="0.55"/>`,
@@ -398,8 +453,26 @@ function bugLook(b: Body, look: { x: number; y: number } | null): string {
     ey = -(-s * dx + c * dy) / d
   }
   const pupil = (x: number) => `<circle cx="${n(x + ex * 2.3)}" cy="${n(-4 + ey * 2.3)}" r="2.6"/>`
+  // Alive: a slow breath, and a blink every few seconds, each bug at its own pace.
+  // Periods in tenths, the same written as reckoned with, so frames agree on where each loop is.
+  const breath = tenths(1.5 + hash(b.id * 7 + 1) * 0.7)
+  const blink = tenths(2.8 + hash(b.id * 7 + 2) * 2.4)
 
-  return `<use href="#pd-bug"/><g fill="#1b0f22">${pupil(-6)}${pupil(6)}</g>`
+  return (
+    `<g><animateTransform attributeName="transform" type="scale" values="1 1;1.04 0.96;1 1" dur="${n(breath)}s" begin="${loop(breath, b.id * 0.37)}" repeatCount="indefinite"/>` +
+    `<use href="#pd-bug"/><g fill="#1b0f22">${pupil(-6)}${pupil(6)}</g>` +
+    `<g transform="translate(0 -4)"><g transform="scale(1 0)">` +
+    `<animateTransform attributeName="transform" type="scale" values="1 0;1 0;1 1;1 0" keyTimes="0;0.9;0.95;1" dur="${n(blink)}s" begin="${loop(blink, b.id * 1.3)}" repeatCount="indefinite"/>` +
+    `<g fill="${hexColor(BUG.color)}" stroke="#2e1236" stroke-width="1.6"><ellipse cx="-6" cy="0" rx="6.3" ry="6.3"/><ellipse cx="6" cy="0" rx="6.3" ry="6.3"/></g></g></g></g>`
+  )
+}
+
+/** A bug hopping for joy, out of the player's reach: its own rhythm, the clock's beat. */
+function hopping(b: Body, inner: string): string {
+  return (
+    `<g><animateTransform attributeName="transform" type="translate" values="0 0;0 -14;0 0" keyTimes="0;0.45;1" calcMode="spline" keySplines="0.2 0.6 0.4 1;0.6 0 0.8 0.4" dur="0.6s" begin="${loop(0.6, b.id * 0.17)}" repeatCount="indefinite"/>` +
+    `${inner}</g>`
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -631,6 +704,45 @@ const STAR = Array.from({ length: 10 }, (_, i) => {
   return `${n(Math.cos(a) * r)},${n(Math.sin(a) * r)}`
 }).join(' ')
 const ZAG = 'M-24 0L-15 -8L-7 4L1 -7L10 0'
+
+const CONFETTI = ['#ffd166', '#ff6b6b', '#7ee787', '#5fb8ff', '#c6a8ff', '#ff8a3d']
+
+/**
+ * A level won, `e` seconds ago: confetti falling and swaying, spinning as it
+ * goes, for as long as the win shows; while its words are up, three stars
+ * popping out round them, one over them and one at either end.
+ */
+function celebration(e: number, words: string | null): string {
+  let out = ''
+  for (let i = 0; i < 36; i++) {
+    const x = hash(i * 3 + 5000) * VIEW_W
+    const dur = 2.6 + hash(i * 3 + 5001) * 1.8
+    const sway = (hash(i * 3 + 5002) - 0.5) * 90
+    const w = 6 + hash(i + 5100) * 5
+    const t = (e + hash(i + 5300) * dur) % dur
+    out +=
+      `<g transform="translate(${n(x)} -20)"><animateTransform attributeName="transform" type="translate" values="${n(x)} -20;${n(x + sway)} ${n(VIEW_H * 0.55)};${n(x - sway * 0.4)} ${n(VIEW_H + 20)}" dur="${n(dur)}s" begin="${-Math.round(t * 1000) / 1000}s" repeatCount="indefinite"/>` +
+      `<rect x="${n(-w / 2)}" y="${n(-w / 4)}" width="${n(w)}" height="${n(w / 2)}" rx="1" fill="${CONFETTI[i % CONFETTI.length]}">` +
+      `<animateTransform attributeName="transform" type="rotate" values="0;360" dur="${n(0.7 + hash(i + 5200) * 0.9)}s" repeatCount="indefinite"/></rect></g>`
+  }
+  if (!words) return out
+  // Where the banner stands and how wide it runs, as wordsMarkup sets it.
+  const k = view.k
+  const size = Math.min(30 * k, (VIEW_W - 40 * k) / (words.length * 0.56))
+  const base = Math.max(sy(9.4), 34 * k + size * 1.4)
+  const half = textWidth(words, size) / 2
+  ;[-1, 0, 1].forEach((side, i) => {
+    const x = VIEW_W / 2 + side * (half + 26 * k)
+    const y = side === 0 ? base - size * 1.45 : base - size * 0.36
+    const scale = (side === 0 ? 2.6 : 2.1) * k
+    out +=
+      `<g transform="translate(${n(x)} ${n(y)})"><g transform="scale(0)">` +
+      `<animateTransform attributeName="transform" type="scale" values="0;${n(scale * 1.3)};${n(scale)}" keyTimes="0;0.6;1" dur="0.5s" begin="${since(e, 0.15 * i)}" fill="freeze"/>` +
+      `<polygon points="${STAR}" fill="#ffd166" stroke="#7a4a00" stroke-width="0.9" stroke-linejoin="round"/></g></g>`
+  })
+
+  return out
+}
 
 /** A stock round drawn around 0,0 in picture units, pointing along +x. */
 function stockLook(ammo: Ammo, c: string): string {
@@ -885,7 +997,8 @@ export function hudMarkup(g: Game): string {
 }
 
 function frame(g: Game, detail: Detail): string {
-  const parts: string[] = []
+  // The sky's drifting and twinkling over the backdrop, then everything else.
+  const parts: string[] = [ambience()]
   const pouch = pouchPosition(g)
 
   // The sling: drawn where the pouch is, gliding there from where it was.
@@ -910,7 +1023,7 @@ function frame(g: Game, detail: Detail): string {
   for (const b of g.bodies) {
     if (b.kind === 'ground') continue
     if (b.kind === 'block') parts.push(drawBlock(b))
-    else if (b.kind === 'bug') parts.push(drawBug(b, look))
+    else if (b.kind === 'bug') parts.push(g.phase === 'lost' ? hopping(b, drawBug(b, look)) : drawBug(b, look))
     else {
       const art = artLeft > 0 && !!b.spec?.art
       if (art) artLeft--
@@ -988,7 +1101,8 @@ function frame(g: Game, detail: Detail): string {
 
   if (detail.particles) for (const p of g.particles) parts.push(drawParticle(p))
 
-  parts.push(hudMarkup(g), wordsMarkup(g))
+  if (g.phase === 'won' && g.endedAt >= 0) parts.push(celebration((g.frame - g.endedAt) * TICK_S, g.banner?.text ?? null))
+  parts.push(hudMarkup(g), wordsMarkup(g, true))
 
   return svgDoc(parts.join(''))
 }
@@ -1018,14 +1132,22 @@ function vortexArms(fx: Effect, turn: number): string {
 }
 
 /** The banner across the sky and the status line along the ground, each shrunk to fit if it must. */
-export function wordsMarkup(g: Game): string {
+/**
+ * The words over the sky and the status line along the foot. `pop`: a banner
+ * just gone up springs in, as far into that as it has been up (a still
+ * frame's); a flight's recording keeps each banner's markup the same from
+ * tick to tick, and springs it in where it shows (`layered`).
+ */
+export function wordsMarkup(g: Game, pop = false): string {
   const k = view.k
   let out = ''
   if (g.banner) {
     const size = Math.min(30 * k, (VIEW_W - 40 * k) / (g.banner.text.length * 0.56))
     // Over the level, where the world's own sky put it, under the bar along the top.
     const y = Math.max(sy(9.4), 34 * k + size * 1.4)
-    out += `<text x="${n(VIEW_W / 2)}" y="${n(y)}" font-size="${n(size)}" font-weight="800" text-anchor="middle" fill="#ffd166" stroke="#0b1026" stroke-width="${n(size / 5)}" stroke-linejoin="round" paint-order="stroke">${esc(g.banner.text)}</text>`
+    const text = `<text x="${n(VIEW_W / 2)}" y="${n(y)}" font-size="${n(size)}" font-weight="800" text-anchor="middle" fill="#ffd166" stroke="#0b1026" stroke-width="${n(size / 5)}" stroke-linejoin="round" paint-order="stroke">${esc(g.banner.text)}</text>`
+    const up = (g.frame - g.banner.from) * TICK_S
+    out += pop && up < BANNER_POP_S ? popIn(text, `${-Math.round(up * 1000) / 1000}s`) : text
   }
   const st = statusLine(g, false)
   if (st.text && st.text !== g.banner?.text) {
@@ -1043,7 +1165,9 @@ export function wordsMarkup(g: Game): string {
 export function backdrop(v: View = BASE_VIEW): string {
   useView(v)
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VIEW_W} ${VIEW_H}" width="${VIEW_W}" height="${VIEW_H}">${drawScenery()}</svg>`
+  // Only what never moves: the backdrop is drawn once, and kept however long;
+  // what drifts and twinkles goes in every frame, made fresh at the clock.
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VIEW_W} ${VIEW_H}" width="${VIEW_W}" height="${VIEW_H}">${stillScenery()}</svg>`
 }
 
 /**
@@ -1369,6 +1493,26 @@ function during(from: number, until: number, inner: string): string {
   return `<g${from > 0 ? ' visibility="hidden"' : ''}>${from > 0 ? show(from) : ''}${until >= 0 ? hide(until) : ''}${inner}</g>`
 }
 
+/** How long a banner takes to spring in. */
+const BANNER_POP_S = 0.4
+
+/** A banner's words springing in from small, around where they stand, beginning at `begin`. */
+function popIn(text: string, begin: string): string {
+  const m = /^<text x="([-\d.]+)" y="([-\d.]+)"/.exec(text)
+  if (!m) return text
+
+  return (
+    `<g transform="translate(${m[1]} ${m[2]})"><g transform="scale(1)">` +
+    `<animateTransform attributeName="transform" type="scale" values="0.4;1.15;0.95;1" keyTimes="0;0.55;0.8;1" dur="${BANNER_POP_S}s" begin="${begin}" fill="freeze"/>` +
+    `${text.replace(/^<text x="[-\d.]+" y="[-\d.]+"/, '<text x="0" y="0"')}</g></g>`
+  )
+}
+
+/** Whether an element of the words is a banner, which springs in. */
+function isBanner(m: string): boolean {
+  return m.startsWith('<text') && m.includes('font-weight="800" text-anchor="middle"')
+}
+
 /**
  * A per-tick list of flat markup (the bar along the top, the words) drawn
  * element by element: each distinct element once, shown for the ticks it is
@@ -1404,7 +1548,7 @@ function layered(list: string[]): string {
       const here = t < list.length && ticks[t] === true
       if (here && start < 0) start = t
       if (!here && start >= 0) {
-        out += during(start, t === list.length ? -1 : t, m)
+        out += during(start, t === list.length ? -1 : t, isBanner(m) ? popIn(m, at(start)) : m)
         start = -1
       }
     }

@@ -34,7 +34,7 @@ import {
   type Run,
 } from './engine'
 import { fly } from './replay'
-import { aimCells, animation, pictureSize, vector, type View } from './vector'
+import { aimCells, animation, pictureSize, useClock, vector, type View } from './vector'
 
 type Local = { n: number; game: Game }
 
@@ -197,6 +197,8 @@ function start(props: GameProps, surface: Parameters<ClientModule<GameProps, Loc
     const g = inst.game
     const flight = fly(g, inst.view)
     setForge(g, inst.forge)
+    // Its loops (bugs breathing, clouds drifting) where the frame under it has them.
+    useClock(Date.now())
     post(animation(flight.rec, inst.view, skip), 'The shot in flight.', true)
     inst.playing = { seq: inst.sent, postedAt: now(), shownAt: null, ticks: flight.rec.ticks, snaps: flight.snaps }
     inst.pending = false
@@ -284,6 +286,7 @@ function start(props: GameProps, surface: Parameters<ClientModule<GameProps, Loc
       inst.acked = inst.sent
     }
     inst.pending = false
+    useClock(Date.now())
     const { svg, alt } = vector(g, inst.view, false, aiming ? inst.lastPouch : null, AIM_FRAME_MS)
     post(svg, alt, false)
     inst.lastPouch = aiming ? pouchPosition(g) : null

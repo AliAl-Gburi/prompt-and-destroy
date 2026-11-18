@@ -75,6 +75,9 @@ On the desktop the game is drawn as SVG (`hooks/vector.ts`): the Forge's drawing
 through the air, blocks crack as they wear, and the bugs watch your shot. A shot's whole
 flight is worked out when it leaves the sling and played as one SMIL animation, keyed only
 where the motion needs it, so even a busy flight keeps every frame, spark and drawing.
+Between shots the scene lives: bugs breathe and blink, clouds drift and stars twinkle, all
+kept in step from picture to picture. A cleared level rains confetti; bugs that got away
+hop for joy.
 The game's `Client` lies invisible over the picture, taking the drags, clicks and keys and
 posting each frame. In the terminal the same game is drawn in half-block cells.
 

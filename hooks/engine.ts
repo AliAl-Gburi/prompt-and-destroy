@@ -339,11 +339,14 @@ export type Game = {
   pathDone: boolean
   /** The frame the Forge began on what it is making (-1: not at work), and the frame the last thing it made reached the pouch. */
   forgeSince: number
+  /** The frame the level was won or lost (-1: still being played). */
+  endedAt: number
   loadedAt: number
   /** When something was last being eaten away (burnt, melted, dissolved, jolted) fast enough to wait for. */
   eaten: number
   pellets: Pellet[]
-  banner: { text: string; until: number } | null
+  /** Words across the sky: from which frame, until which. */
+  banner: { text: string; from: number; until: number } | null
   frame: number
   events: GameEvent[]
   view: View
@@ -964,6 +967,7 @@ export function newGame(level: number, best: number): Game {
     pathDone: true,
     forgeSince: -1,
     loadedAt: -1,
+    endedAt: -1,
     eaten: -1,
     pellets: [],
     banner: null,
@@ -981,6 +985,7 @@ export function loadLevel(g: Game, level: number): void {
   g.level = level
   g.title = spec.title
   g.levelStartScore = g.score
+  g.endedAt = -1
   g.bodies = []
   g.arbiters = new Map()
   g.joints = []
@@ -1798,7 +1803,7 @@ function physicsStep(g: Game): void {
 // Rules
 
 function setBanner(g: Game, text: string, ticks: number): void {
-  g.banner = { text, until: g.frame + ticks }
+  g.banner = { text, from: g.frame, until: g.frame + ticks }
 }
 
 /** The power going off, by the Forge's name for it, or `fallback`. */
@@ -2902,6 +2907,12 @@ function isCalm(g: Game): boolean {
 
 function endTurn(g: Game): void {
   g.active.clear()
+  if (bugsLeft(g) > 0 && g.shots > 0) {
+    g.phase = 'waiting'
+
+    return
+  }
+  g.endedAt = g.frame
   if (bugsLeft(g) === 0) {
     const bonus = g.shots * 1000
     g.score += bonus
@@ -2915,8 +2926,6 @@ function endTurn(g: Game): void {
     const left = bugsLeft(g)
     setBanner(g, `Out of shots. ${left === 1 ? 'One bug survives' : `${left} bugs survive`}... for now.`, 90)
     g.events.push({ type: 'result', level: g.level, score: g.score, won: false })
-  } else {
-    g.phase = 'waiting'
   }
 }
 
