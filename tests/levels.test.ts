@@ -58,7 +58,21 @@ test('generated levels each differ, and are the same each time they are played',
   }
   expect(seen.size).toBe(25)
   // Themed by name, numbered by level.
-  expect(newGame(12, 0).title).toMatch(/^(Bug nest|Timber yard|Glass works|Stone fort) #12$/)
+  expect(newGame(12, 0).title).toMatch(/^(Bug nest|Timber yard|Glass works|Stone fort|Steel mill|Bunker line) #12$/)
+})
+
+test('steel and concrete come in after the first five levels, each with a level of its own', () => {
+  const mats = (n: number) => new Set(newGame(n, 0).bodies.map(b => b.mat))
+  for (let n = 1; n <= 5; n++) {
+    expect(mats(n).has('metal')).toBe(false)
+    expect(mats(n).has('concrete')).toBe(false)
+  }
+  expect(mats(6).has('metal')).toBe(true)
+  expect(mats(7).has('concrete')).toBe(true)
+  // And the generated levels build with them too.
+  const later = new Set<string>()
+  for (let n = 8; n <= 30; n++) for (const m of mats(n)) later.add(m)
+  for (const m of ['wood', 'stone', 'glass', 'metal', 'concrete']) expect(later.has(m)).toBe(true)
 })
 
 test('running out of shots says how many bugs got away', () => {

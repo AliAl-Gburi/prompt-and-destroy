@@ -29,12 +29,15 @@ const MATTER_INK: Record<string, string> = {
   live: '#fff36b',
   conductive: '#c9d3e0',
   corrosive: '#8cff3a',
+  hard: '#b8c6d8',
+  soft: '#ffc2e0',
+  sharp: '#e8f0ff',
 }
 
 // Change a tag when its value's fields change: an older stored value then
 // reads as the initial one instead of a shape the code no longer knows.
 const forgeAtom = atom({ plugin: 'prompt-and-destroy', key: 'forge' } as const, { status: 'idle' } as Forge, {
-  shape: 'forge-2',
+  shape: 'forge-3',
 })
 const progressAtom = atom(
   { plugin: 'prompt-and-destroy', key: 'progress' } as const,

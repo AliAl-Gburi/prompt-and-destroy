@@ -109,8 +109,8 @@ test('the request quotes the prompt and the system prompt names every power', as
   for (const word of ['shoot', 'explode', 'split', 'rocket', 'grow', 'dive', 'boomerang', 'vortex']) expect(FORGE_SYSTEM).toContain(`"${word}"`)
   // What a round does is set out in properties the model sets from what the object is, never by object.
   for (const word of ['size', 'count', 'every', 'spread', 'speed', 'gravity', 'punch', 'blast', 'pierce', 'bounce', 'matter', 'life', 'fade', 'turn', 'trail']) expect(FORGE_SYSTEM).toContain(`${word}:`)
-  // So is what everything is made of: the nine numbers the world's chemistry works from.
-  for (const word of ['heat', 'burns', 'explodes', 'melts', 'wet', 'electric', 'conducts', 'acid', 'dissolves']) expect(FORGE_SYSTEM).toContain(`  ${word}:`)
+  // So is what everything is made of: the twelve numbers the world's chemistry and knocks work from.
+  for (const word of ['heat', 'burns', 'explodes', 'melts', 'wet', 'electric', 'conducts', 'acid', 'dissolves', 'hard', 'sharp', 'iron']) expect(FORGE_SYSTEM).toContain(`  ${word}:`)
   for (const word of ['none', 'glass', 'all', 'point', 'spin', 'upright']) expect(FORGE_SYSTEM).toContain(`"${word}"`)
   for (const word of ['right', 'left', 'up', 'down', 'around', 'target', 'ahead', 'back']) expect(FORGE_SYSTEM).toContain(`"${word}"`)
   // No object goes without a power.
@@ -477,6 +477,24 @@ test('what an object is made of is the model\'s rating, clamped; with none, the 
   expect(fallbackItem('a car battery', 'b1').matter).toMatchObject({ electric: 0.8, conducts: 1 })
   expect(fallbackItem('a can of petrol', 'p1').matter).toMatchObject({ burns: 1, explodes: 0.7 })
   expect(fallbackItem('a vague notion', 'v1').matter).toEqual(NO_MATTER)
+})
+
+test('how hard and sharp a thing is, and the iron in it, are rated too, and guessed from the words when not', () => {
+  const blade = forged({ ...PIANO, matter: { hard: 0.9, sharp: '1', iron: 3 } })
+  expect(blade.matter).toMatchObject({ hard: 0.9, sharp: 1, iron: 1 })
+  expect(matterWords(blade.matter)).toEqual(['hard', 'sharp'])
+  // Its hardness left out, the words say how hard it is; with nothing to go on, middling.
+  expect(parseItem(JSON.stringify({ ...PIANO, matter: { burns: 0.2 } }), 'a fluffy pillow', 'f')!.matter.hard).toBeLessThan(0.15)
+  expect(parseItem(JSON.stringify({ ...PIANO, matter: { burns: 0.2 } }), 'a grand piano', 'g')!.matter.hard).toBe(0.5)
+  expect(matterWords({ ...NO_MATTER, hard: 0.05 })).toEqual(['soft'])
+  // Out of the model's reach, the words guess all three; the hardest word decides how hard.
+  expect(fallbackItem('a katana', 'k').matter).toMatchObject({ sharp: 0.9, hard: 0.85 })
+  expect(fallbackItem('an anvil', 'a').matter).toMatchObject({ iron: 0.9, hard: 0.9 })
+  expect(fallbackItem('a marshmallow', 'm').matter.hard).toBeLessThan(0.15)
+  expect(fallbackItem('a steel pillow', 's').matter.hard).toBe(0.9)
+  // Rated before there were these numbers: neither hard nor soft.
+  const { hard: _h, sharp: _s, iron: _i, ...old } = NO_MATTER
+  expect(matterWords(old as typeof NO_MATTER)).toEqual([])
 })
 
 test('an object drawn inside its JSON still finds its round drawn after it', () => {

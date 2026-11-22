@@ -6,7 +6,7 @@
 // Pure, like engine.ts and vector.ts.
 
 import { cloneGame, elementCode, tick, type Body, type Game, type Pellet } from './engine'
-import { BASE_VIEW, crackLevel, heading, hudMarkup, useView, wordsMarkup, type PelletTrack, type Recording, type Track, type View } from './vector'
+import { BASE_VIEW, crackLevel, eatenLevel, heading, hudMarkup, useView, wordsMarkup, type PelletTrack, type Recording, type Track, type View } from './vector'
 
 /** The longest a turn is recorded; the engine ends one after 14 seconds anyway. */
 const MAX_TICKS = 400
@@ -45,7 +45,7 @@ export function fly(g: Game, v: View = BASE_VIEW): Flight {
       if (b.kind === 'ground') continue
       let tr = tracks.get(b)
       if (!tr) {
-        tr = { body: b, born: t, died: -1, poses: [], cracked: [-1, -1], flash: -1, states: [] }
+        tr = { body: b, born: t, died: -1, poses: [], cracked: [-1, -1], eaten: [-1, -1], flash: -1, states: [] }
         tracks.set(b, tr)
         rec.tracks.push(tr)
       }
@@ -55,6 +55,9 @@ export function fly(g: Game, v: View = BASE_VIEW): Flight {
       const level = b.kind === 'block' ? crackLevel(b) : 0
       if (level >= 1 && tr.cracked[0] < 0) tr.cracked[0] = t
       if (level >= 2 && tr.cracked[1] < 0) tr.cracked[1] = t
+      const eaten = b.kind === 'block' ? eatenLevel(b) : 0
+      if (eaten >= 1 && tr.eaten[0] < 0) tr.eaten[0] = t
+      if (eaten >= 2 && tr.eaten[1] < 0) tr.eaten[1] = t
     }
     for (const tr of rec.tracks) if (tr.died < 0 && !alive.has(tr.body)) tr.died = t
     for (const p of g.pellets) {

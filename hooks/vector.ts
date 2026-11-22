@@ -312,44 +312,206 @@ function stillScenery(): string {
 // ---------------------------------------------------------------------------
 // Blocks and bugs
 
-/** How worn a block looks: 0, 1 or 2 cracks. */
+/** How knocked about a block looks: 0, 1 or 2 stages of its own kind of damage (cracks, splits, dents). */
 export function crackLevel(b: Body): number {
-  const worn = Math.max(b.wear / b.strength, b.decay)
+  const worn = b.wear / b.strength
   if (!Number.isFinite(worn) || worn < 0.25) return 0
 
   return worn > 0.6 ? 2 : 1
 }
 
-/** A block's two cracks, the same for the same block every frame, in its frame. */
-function crackLines(b: Body): string[] {
-  const w = b.hw * 2 * S
-  const h = b.hh * 2 * S
-  const color = b.mat === 'wood' ? '#3a2412' : b.mat === 'stone' ? '#33373d' : '#ffffff'
-  const out: string[] = []
-  for (let k = 0; k < 2; k++) {
-    const seed = b.id * 7 + k * 13
-    let x = (hash(seed) - 0.5) * w
-    let y = -h / 2
-    if (hash(seed + 1) > 0.5) {
-      x = -w / 2
-      y = (hash(seed + 2) - 0.5) * h
-    }
-    let d = `M${n(x)} ${n(y)}`
-    for (let i = 0; i < 4; i++) {
-      x += (-x * 0.35 + (hash(seed + 3 + i) - 0.5) * w * 0.5) * 0.9
-      y += (-y * 0.35 + (hash(seed + 9 + i) - 0.5) * h * 0.5) * 0.9 + h * 0.08
-      d += `L${n(x)} ${n(y)}`
-    }
-    out.push(
-      `<path d="${d}" stroke="${color}" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>`,
-    )
+/** How eaten away a block looks, by acid or by melting: 0, 1 or 2 stages of pits. What fire took shows as char instead. */
+export function eatenLevel(b: Body): number {
+  const eaten = b.decay - b.char
+  if (!(eaten >= 0.12)) return 0
+
+  return eaten >= 0.4 ? 2 : 1
+}
+
+/** A crack's wandering line from an edge of a w by h block toward its middle, the same for the same seed. */
+function crackPath(seed: number, w: number, h: number): string {
+  let x = (hash(seed) - 0.5) * w
+  let y = -h / 2
+  if (hash(seed + 1) > 0.5) {
+    x = -w / 2
+    y = (hash(seed + 2) - 0.5) * h
+  }
+  let d = `M${n(x)} ${n(y)}`
+  for (let i = 0; i < 4; i++) {
+    x += (-x * 0.35 + (hash(seed + 3 + i) - 0.5) * w * 0.5) * 0.9
+    y += (-y * 0.35 + (hash(seed + 9 + i) - 0.5) * h * 0.5) * 0.9 + h * 0.08
+    d += `L${n(x)} ${n(y)}`
   }
 
-  return out
+  return d
+}
+
+/** A point inside a w by h block, `pad` in from its edges, the same for the same seed. */
+function spotIn(seed: number, w: number, h: number, pad: number): [number, number] {
+  return [(hash(seed) - 0.5) * Math.max(0, w - 2 * pad), (hash(seed + 1) - 0.5) * Math.max(0, h - 2 * pad)]
+}
+
+/** Dots, as one path: round-capped steps of next to nothing. */
+function dots(pts: [number, number][]): string {
+  return pts.map(([x, y]) => `M${n(x)} ${n(y)}h0.01`).join('')
+}
+
+function stroke(d: string, color: string, width: number, extra = ''): string {
+  return `<path d="${d}" stroke="${color}" stroke-width="${width}" fill="none" stroke-linecap="round" stroke-linejoin="round"${extra}/>`
+}
+
+/**
+ * A block's two stages of knocks, in its frame, each its material's own: wood
+ * splits along its grain then splinters, stone cracks, concrete cracks in
+ * branches then spalls to show the steel bars inside, glass stars then webs,
+ * and steel dents then buckles.
+ */
+function damageMarks(b: Body): [string, string] {
+  const w = b.hw * 2 * S
+  const h = b.hh * 2 * S
+  const x0 = -w / 2
+  const y0 = -h / 2
+  const seed = b.id * 7
+  switch (b.mat) {
+    case 'wood': {
+      const long = w >= h
+      const split = (k: number) => {
+        const s = seed + k * 13
+        const across = (hash(s) - 0.5) * 0.6
+        const reach = 0.45 + hash(s + 1) * 0.3
+        let d = ''
+        for (let i = 0; i <= 4; i++) {
+          const along = k ? 0.5 - (i / 4) * reach : (i / 4) * reach - 0.5
+          const wob = (hash(s + 2 + i) - 0.5) * 2.4
+          d += `${i ? 'L' : 'M'}${n(long ? along * w : across * w + wob)} ${n(long ? across * h + wob : along * h)}`
+        }
+
+        return d
+      }
+      const notch = long
+        ? `M${n(w * 0.12)} ${n(y0)}L${n(w * 0.2)} ${n(y0 + h * 0.4)}L${n(w * 0.3)} ${n(y0)}Z`
+        : `M${n(x0)} ${n(h * 0.1)}L${n(x0 + w * 0.4)} ${n(h * 0.18)}L${n(x0)} ${n(h * 0.28)}Z`
+
+      return [stroke(split(0), '#2b1a0b', 1.8), stroke(split(1), '#2b1a0b', 1.8) + `<path d="${notch}" fill="#3a2412" stroke="#2b1a0b" stroke-width="1"/>`]
+    }
+    case 'glass': {
+      const [cx, cy] = spotIn(seed, w, h, 4)
+      const inside = (v: number, size: number) => Math.max(-size / 2 + 1, Math.min(size / 2 - 1, v))
+      const len = Math.max(w, h) * 0.45
+      const rays = (from: number, count: number, reach: number) => {
+        let d = ''
+        for (let i = 0; i < count; i++) {
+          const ang = ((i + hash(seed + from + i) * 0.6) / count) * Math.PI * 2
+          const r = reach * (0.5 + hash(seed + from + 20 + i) * 0.7)
+          d += `M${n(cx)} ${n(cy)}L${n(inside(cx + Math.cos(ang) * r, w))} ${n(inside(cy + Math.sin(ang) * r, h))}`
+        }
+
+        return d
+      }
+      let web = ''
+      for (let i = 0; i <= 6; i++) {
+        const ang = (i / 6) * Math.PI * 2
+        web += `${i ? 'L' : 'M'}${n(inside(cx + Math.cos(ang) * len * 0.3, w))} ${n(inside(cy + Math.sin(ang) * len * 0.3, h))}`
+      }
+
+      return [stroke(rays(0, 5, len), '#ffffff', 1.2, ' opacity="0.9"'), stroke(rays(40, 4, len * 1.3) + web, '#ffffff', 1, ' opacity="0.75"')]
+    }
+    case 'concrete': {
+      const cw = Math.min(w * 0.4, 18)
+      const ch = Math.min(h * 0.45, 14)
+      const right = hash(seed + 5) > 0.5
+      const sx = right ? -x0 : x0
+      const dir = right ? -1 : 1
+      const sy = -y0
+      const spall = `M${n(sx)} ${n(sy - ch)}L${n(sx + dir * cw * 0.5)} ${n(sy - ch * 0.9)}L${n(sx + dir * cw)} ${n(sy - ch * 0.3)}L${n(sx + dir * cw * 0.8)} ${n(sy)}L${n(sx)} ${n(sy)}Z`
+      const bar = `M${n(sx + dir * cw * 0.85)} ${n(sy - ch * 0.5)}L${n(sx)} ${n(sy - ch * 0.5)}`
+
+      return [
+        stroke(crackPath(seed, w, h), '#4a463f', 2) + stroke(crackPath(seed + 5, w * 0.6, h * 0.6), '#4a463f', 1.3),
+        stroke(crackPath(seed + 13, w, h), '#4a463f', 2) +
+          `<path d="${spall}" fill="#8c867b" stroke="#5f5a52" stroke-width="1" stroke-linejoin="round"/>` +
+          stroke(bar, '#9a5b33', 2.4) +
+          stroke(bar, '#d0946a', 0.8),
+      ]
+    }
+    case 'metal': {
+      const r = Math.max(3, Math.min(9, Math.min(w, h) * 0.3))
+      // A dent: shadowed at its upper left, lit at its lower right, its floor a little darker than the plate.
+      const dent = (s: number, rx: number) => {
+        const [cx, cy] = spotIn(s, w, h, rx + 2)
+        const ry = rx * 0.7
+        const oval = (dx: number, dy: number, k: number, fill: string, opacity: number) =>
+          `<ellipse cx="${n(cx + dx * rx)}" cy="${n(cy + dy * ry)}" rx="${n(rx * k)}" ry="${n(ry * k)}" fill="${fill}" opacity="${opacity}"/>`
+
+        return oval(0, 0, 1, '#3f4d5c', 0.55) + oval(0.14, 0.2, 0.84, '#dfe8f1', 0.7) + oval(-0.06, -0.06, 0.74, '#7d91a5', 1)
+      }
+      const crease = w >= h ? `M${n(x0 + w * 0.3)} ${n(y0 + 2)}L${n(x0 + w * 0.45)} ${n(-y0 - 2)}` : `M${n(x0 + w * 0.1)} ${n(y0 + h * 0.3)}L${n(-x0 - w * 0.12)} ${n(y0 + h * 0.42)}`
+
+      return [dent(seed, r), dent(seed + 9, r * 0.8) + stroke(crease, '#26303b', 1.6) + `<g transform="translate(1 1)">${stroke(crease, '#e6eef7', 0.9, ' opacity="0.6"')}</g>`]
+    }
+    default:
+      return [stroke(crackPath(seed, w, h), '#33373d', 1.6, ' opacity="0.85"'), stroke(crackPath(seed + 13, w, h), '#33373d', 1.6, ' opacity="0.85"')]
+  }
+}
+
+/** How each material's pits look: the shadow round each, the lit lip at its foot, its depth, and what runs from it (steel's rust). */
+const PITS: Record<string, { rim: string; lip: string; core: string; run: string }> = {
+  wood: { rim: '#6e4a26', lip: '#d09a5e', core: '#1d1209', run: '' },
+  stone: { rim: '#6a6f77', lip: '#c3c8cf', core: '#2f3237', run: '' },
+  concrete: { rim: '#86806f', lip: '#dcd7cc', core: '#3f3b35', run: '' },
+  glass: { rim: '#e8f8ff', lip: '#ffffff', core: '#ffffff', run: '' },
+  metal: { rim: '#b45f22', lip: '#e39257', core: '#40200c', run: '#9b4a1a' },
+}
+
+/** A block's two stages of being eaten away, in its frame: pits, then more and a ragged bite out of its top. */
+function eatenMarks(b: Body): [string, string] {
+  const w = b.hw * 2 * S
+  const h = b.hh * 2 * S
+  const x0 = -w / 2
+  const y0 = -h / 2
+  const look = PITS[b.mat] ?? PITS.stone!
+  const r = Math.max(2, Math.min(6, Math.min(w, h) * 0.22))
+  // Each pit a hole: its shadow, a lit lip at its foot, and its dark depth; every other one smaller.
+  const pits = (from: number, count: number, size: number) => {
+    let out = ''
+    for (const k of [1, 0.7]) {
+      const pts: [number, number][] = []
+      for (let i = k === 1 ? 0 : 1; i < count; i += 2) pts.push(spotIn(b.id * 11 + from + i * 3, w, h, size))
+      if (pts.length === 0) continue
+      const z = size * k
+      out +=
+        `<path d="${dots(pts)}" stroke="${look.rim}" stroke-width="${n(z * 2)}" stroke-linecap="round" opacity="0.85"/>` +
+        `<path d="${dots(pts.map(([x, y]) => [x, y + z * 0.35]))}" stroke="${look.lip}" stroke-width="${n(z * 1.2)}" stroke-linecap="round" opacity="0.6"/>` +
+        `<path d="${dots(pts.map(([x, y]) => [x, y - z * 0.12]))}" stroke="${look.core}" stroke-width="${n(z * 1.15)}" stroke-linecap="round"/>`
+    }
+
+    return out
+  }
+  let runs = ''
+  if (look.run) {
+    for (let i = 0; i < 3; i++) {
+      const [x, y] = spotIn(b.id * 11 + i * 3, w, h, r)
+      const len = Math.min(10, h / 2 - y - r)
+      if (len > 1) runs += `M${n(x)} ${n(y + r)}v${n(len)}`
+    }
+  }
+  const xa = x0 + w * (0.2 + hash(b.id * 11 + 90) * 0.3)
+  const span = w * 0.3
+  const depth = Math.min(h * 0.35, 9)
+  let bite = `M${n(xa)} ${n(y0)}`
+  for (let i = 1; i < 5; i++) bite += `L${n(xa + (span * i) / 5)} ${n(y0 + depth * (0.5 + hash(b.id * 11 + 91 + i) * 0.5))}`
+  bite += `L${n(xa + span)} ${n(y0)}Z`
+
+  return [pits(0, 3, r) + (runs ? stroke(runs, look.run, 1.4, ' opacity="0.75"') : ''), pits(50, 4, r * 1.3) + `<path d="${bite}" fill="${look.core}" opacity="0.85"/>`]
+}
+
+/** What a block shows of the knocks it took and what has eaten it, up to the stages given. */
+function blockMarks(b: Body, cracked: number, eaten: number): string {
+  return eatenMarks(b).slice(0, eaten).join('') + damageMarks(b).slice(0, cracked).join('')
 }
 
 function drawBlock(b: Body): string {
-  return `<g transform="${place(b.x, b.y, b.a)}">${blockLook(b, crackLines(b).slice(0, crackLevel(b)).join(''))}${atWork(b)}`
+  return `<g transform="${place(b.x, b.y, b.a)}">${blockLook(b, blockMarks(b, crackLevel(b), eatenLevel(b)))}${atWork(b)}`
 }
 
 /**
@@ -364,14 +526,16 @@ function atWork(b: Body): string {
   return `${l.turned}</g>${l.near ? `<g transform="translate(${n(sx(b.x))} ${n(sy(b.y))})">${l.near}</g>` : ''}`
 }
 
-/** A block in its own frame (pixels, y down), with `cracks` drawn over it. */
-function blockLook(b: Body, cracks: string): string {
+/** A block in its own frame (pixels, y down), with `marks` (its damage) drawn over it. */
+function blockLook(b: Body, marks: string): string {
   const w = b.hw * 2 * S
   const h = b.hh * 2 * S
   const x0 = -w / 2
   const y0 = -h / 2
-  const rect = (fill: string, stroke: string, extra = '') =>
-    `<rect x="${n(x0)}" y="${n(y0)}" width="${n(w)}" height="${n(h)}" rx="3" fill="${fill}" stroke="${stroke}" stroke-width="2.6"${extra}/>`
+  const rect = (fill: string, edge: string, extra = '') =>
+    `<rect x="${n(x0)}" y="${n(y0)}" width="${n(w)}" height="${n(h)}" rx="3" fill="${fill}" stroke="${edge}" stroke-width="2.6"${extra}/>`
+  const shine = (opacity: number, tall = 4) =>
+    `<rect x="${n(x0 + 2)}" y="${n(y0 + 2)}" width="${n(w - 4)}" height="${n(Math.min(tall, h * 0.2))}" rx="1.5" fill="#ffffff" opacity="${opacity}"/>`
   let body = ''
   if (b.mat === 'wood') {
     const m = MATERIALS.wood
@@ -386,7 +550,7 @@ function blockLook(b: Body, cracks: string): string {
     }
     body += `<path d="${grain}" stroke="${hexColor(shade(m.color, 0.78))}" stroke-width="1.3" fill="none" opacity="0.8"/>`
     if (w * h > 900) body += `<ellipse cx="${n(w * 0.18)}" cy="${n(h * 0.12)}" rx="3" ry="2" fill="none" stroke="${hexColor(m.edge)}" stroke-width="1.2"/>`
-    body += `<rect x="${n(x0 + 2)}" y="${n(y0 + 2)}" width="${n(w - 4)}" height="${n(Math.min(4, h * 0.2))}" rx="1.5" fill="#ffffff" opacity="0.12"/>`
+    body += shine(0.12)
   } else if (b.mat === 'stone') {
     const m = MATERIALS.stone
     body += rect(hexColor(m.color), '#2c3036')
@@ -401,7 +565,41 @@ function blockLook(b: Body, cracks: string): string {
       for (let x = x0 + (r % 2 ? 14 : 26); x < -x0 - 6; x += 28) mortar += `M${n(x)} ${n(ya + 1)}V${n(yb - 1)}`
     }
     body += `<path d="${mortar}" stroke="#6c727b" stroke-width="1.4" fill="none"/>`
-    body += `<rect x="${n(x0 + 2)}" y="${n(y0 + 2)}" width="${n(w - 4)}" height="${n(Math.min(5, h * 0.25))}" rx="1.5" fill="#ffffff" opacity="0.16"/>`
+    body += shine(0.16, 5)
+  } else if (b.mat === 'concrete') {
+    const m = MATERIALS.concrete
+    body += rect(hexColor(m.color), '#4a463f')
+    // Cast in one piece: grit through it, and the holes its form was tied with on big pieces.
+    const dark: [number, number][] = []
+    const light: [number, number][] = []
+    const count = Math.min(14, Math.max(4, Math.round((w * h) / 140)))
+    for (let i = 0; i < count; i++) (i % 3 ? dark : light).push(spotIn(b.id * 31 + i * 2, w, h, 4))
+    body += `<path d="${dots(dark)}" stroke="#827c71" stroke-width="2" stroke-linecap="round"/><path d="${dots(light)}" stroke="#d9d4c9" stroke-width="1.6" stroke-linecap="round"/>`
+    if (w * h > 1100) {
+      const ties: [number, number][] = w >= h ? [[-w * 0.28, 0], [w * 0.28, 0]] : [[0, -h * 0.28], [0, h * 0.28]]
+      body += `<path d="${dots(ties)}" stroke="#57524a" stroke-width="3.2" stroke-linecap="round"/>`
+    }
+    body += shine(0.14)
+  } else if (b.mat === 'metal') {
+    const m = MATERIALS.metal
+    body += rect(hexColor(m.color), '#232b35')
+    // Brushed along its length, a sheen across, a seam on long plates, a rivet at each corner.
+    const long = w >= h
+    let brush = ''
+    for (const t of [-0.3, -0.1, 0.12, 0.32]) brush += long ? `M${n(x0 + 3)} ${n(h * t)}H${n(-x0 - 3)}` : `M${n(w * t)} ${n(y0 + 3)}V${n(-y0 - 3)}`
+    body += `<path d="${brush}" stroke="#c3d0de" stroke-width="0.8" opacity="0.35"/>`
+    const k = Math.min(w, h)
+    body += `<path d="M${n(x0 + k * 0.3)} ${n(-y0 - 2)}L${n(x0 + k * 0.8)} ${n(y0 + 2)}" stroke="#ffffff" stroke-width="${n(Math.max(2, k * 0.14))}" stroke-linecap="round" opacity="0.16"/>`
+    if (long && w > 80) body += `<path d="M0 ${n(y0 + 2)}V${n(-y0 - 2)}" stroke="#3d4a58" stroke-width="1.2"/>`
+    const inset = Math.max(3, Math.min(5, k * 0.25))
+    const corners: [number, number][] = [
+      [x0 + inset, y0 + inset],
+      [-x0 - inset, y0 + inset],
+      [x0 + inset, -y0 - inset],
+      [-x0 - inset, -y0 - inset],
+    ]
+    body += `<path d="${dots(corners)}" stroke="#2a333e" stroke-width="3.4" stroke-linecap="round"/><path d="${dots(corners.map(([x, y]) => [x - 0.6, y - 0.6]))}" stroke="#e6eef7" stroke-width="1.1" stroke-linecap="round"/>`
+    body += shine(0.18, 3)
   } else {
     const m = MATERIALS.glass
     body += rect(hexColor(m.color), '#1f5a78', ' fill-opacity="0.42"')
@@ -414,7 +612,7 @@ function blockLook(b: Body, cracks: string): string {
   // A shaded underside, for weight.
   if (b.mat !== 'glass') body += `<rect x="${n(x0 + 1.5)}" y="${n(-y0 - Math.min(4, h * 0.18) - 1.5)}" width="${n(w - 3)}" height="${n(Math.min(4, h * 0.18))}" rx="1" fill="#000000" opacity="0.18"/>`
 
-  return body + cracks
+  return body + marks
 }
 
 function drawBug(b: Body, look: { x: number; y: number } | null): string {
@@ -513,13 +711,13 @@ function shotLook(spec: ShotSpec | null, info: ShapeInfo, color: number, scale: 
 }
 
 // ---------------------------------------------------------------------------
-// What is at work on a body (engine's `elementCode`): fire, a lit fuse,
-// water, frost, a shock, acid. A tint over the body, turned with it, and a
+// What is at work on a body (engine's `elementCode`): char, a glow of heat,
+// fire, a lit fuse, water, frost, a shock, acid. A tint over the body, turned with it, and a
 // look round it that stays upright (flames rise whichever way it lies), each
 // look defined once per picture for every body showing it to use.
 
 /** The letters of `elementCode`, in the order they are drawn, bottom up. */
-const ELEMENTS = 'cwiafzx'
+const ELEMENTS = 'chwiafzx'
 
 const ELEMENT_DEFS: Record<string, string> = {
   f:
@@ -590,6 +788,15 @@ function elementLayer(b: Body, letter: string): { turned: string; near: string }
           (b.char > 0.45 && b.kind === 'block'
             ? `<path d="M${n(-b.hw * S * 0.6)} ${n(-b.hh * S * 0.3)}l${n(b.hw * S * 0.35)} ${n(b.hh * S * 0.5)}M${n(b.hw * S * 0.1)} ${n(-b.hh * S * 0.5)}l${n(b.hw * S * 0.3)} ${n(b.hh * S * 0.7)}" stroke="#000000" stroke-width="2" stroke-linecap="round" opacity="0.35"/>`
             : ''),
+        near: '',
+      }
+    case 'h':
+      // Glowing hot: red at its edges, orange to yellow at its heart, breathing; its outline lit.
+      return {
+        turned:
+          `<g>${overShape(b, '#ff3300', 0.5)}<g transform="scale(0.8)">${overShape(b, '#ff7a1a', 0.25)}</g><g transform="scale(0.55)">${overShape(b, '#ffb020', 0.25)}</g><g transform="scale(0.3)">${overShape(b, '#ffe066', 0.3)}</g>` +
+          `<animate attributeName="opacity" values="0.6;1;0.6" dur="0.9s" repeatCount="indefinite"/></g>` +
+          overShape(b, 'none', 0.85, '#ffb03a'),
         near: '',
       }
     case 'f':
@@ -1430,8 +1637,10 @@ export type Track = {
   died: number
   /** x, y and angle per tick from `born`, in world units. */
   poses: number[]
-  /** The ticks it first showed one crack and two (-1: never). */
+  /** The ticks it first showed each stage of its knocks, cracks or dents (-1: never). */
   cracked: [number, number]
+  /** The ticks it first showed each stage of being eaten away (-1: never). */
+  eaten: [number, number]
   /** The tick its power went off, flashing round it (-1: never). */
   flash: number
   /** What was at work on it each tick from `born` (engine's `elementCode`). */
@@ -1672,8 +1881,13 @@ function trackMarkup(rec: Recording, tr: Track, detail: AnimDetail, art: boolean
   let look = ''
   let near = ''
   if (b.kind === 'block') {
-    const lines = crackLines(b)
-    look = blockLook(b, tr.cracked.map((t, k) => (t < 0 ? '' : during(t, -1, lines[k]!))).join(''))
+    // Each stage of its damage from the tick it reached it: pits under cracks.
+    const pits = eatenMarks(b)
+    const dents = damageMarks(b)
+    look = blockLook(
+      b,
+      tr.eaten.map((t, k) => (t < 0 ? '' : during(t, -1, pits[k]!))).join('') + tr.cracked.map((t, k) => (t < 0 ? '' : during(t, -1, dents[k]!))).join(''),
+    )
   } else if (b.kind === 'bug') {
     look = bugLook({ ...b, x: p[0]!, y: p[1]!, a: p[2]! }, rec.look)
   } else {

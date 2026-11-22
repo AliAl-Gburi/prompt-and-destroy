@@ -9,7 +9,7 @@
       "name": "prompt-and-destroy",
       "source": "./",
       "description": "A slingshot physics game in a pane: prompt any object into existence, drawn and shaped by the Forge, and fling it at towers of bugs.",
-      "version": "0.5.0"
+      "version": "0.6.0"
     }
   ]
 }

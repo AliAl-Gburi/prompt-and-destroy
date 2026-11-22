@@ -19,10 +19,10 @@ export type Facing = 'right' | 'left' | 'up' | 'down' | 'around'
 export type Aim = 'target' | 'ahead' | 'back' | 'up' | 'down'
 
 /**
- * What a thing is made of and carries, as the world's chemistry reads it: the
- * shape of `Matter` in ../types. Each 0 to 1, but heat -1 (freezing) to 1
- * (burning). Blocks, bugs, shots and rounds all have these nine, and what
- * happens where two meet follows from them alone.
+ * What a thing is made of and carries, as the world's chemistry and its
+ * knocks read it: the shape of `Matter` in ../types. Each 0 to 1, but heat -1
+ * (freezing) to 1 (burning). Blocks, bugs, shots and rounds all have these
+ * twelve, and what happens where two meet follows from them alone.
  */
 export type Matter = {
   heat: number
@@ -34,10 +34,16 @@ export type Matter = {
   conducts: number
   acid: number
   dissolves: number
+  /** How hard it is: 0 jelly or foam, 1 diamond. */
+  hard: number
+  /** The edge or point it strikes with: 0 blunt, 1 a razor. */
+  sharp: number
+  /** How much iron or steel is in it, which magnets pull. */
+  iron: number
 }
 
-/** Matter that does nothing: no heat, nothing to burn, melt, carry or eat. */
-export const INERT: Matter = { heat: 0, burns: 0, explodes: 0, melts: 0, wet: 0, electric: 0, conducts: 0, acid: 0, dissolves: 0 }
+/** Matter that does nothing: middling hard, blunt, no heat, nothing to burn, melt, carry, eat or pull. */
+export const INERT: Matter = { heat: 0, burns: 0, explodes: 0, melts: 0, wet: 0, electric: 0, conducts: 0, acid: 0, dissolves: 0, hard: 0.5, sharp: 0, iron: 0 }
 
 export function matterOf(m: Partial<Matter>): Matter {
   return { ...INERT, ...m }
@@ -98,7 +104,7 @@ export type ForgeView =
   | { status: 'ready'; item: ShotSpec; note: string | null }
 
 type Kind = 'ground' | 'block' | 'bug' | 'shot'
-export type Material = 'ground' | 'wood' | 'stone' | 'glass' | 'bug' | 'shot'
+export type Material = 'ground' | 'wood' | 'stone' | 'glass' | 'concrete' | 'metal' | 'bug' | 'shot'
 
 /** How a body collides: boxes keep Box2D-lite's own clipper, the rest share a general one. */
 export type ShapeKind = 'box' | 'poly' | 'circle'
@@ -186,6 +192,8 @@ export type Body = ShapeInfo & {
   decay: number
   /** How much of that fire did, 0 to 1: how blackened it looks. */
   char: number
+  /** Heat it has taken in and carries, 0 to 1: what conducts warms from what is hot, and cools in time. */
+  warm: number
 }
 
 type Contact = {
@@ -432,10 +440,70 @@ export function visible(c: number): number {
   return lum < 70 ? mix(c, 0xffffff, (70 - lum) / 160 + 0.15) : c
 }
 
+/**
+ * What the levels are built of. Each is rated on the same twelve numbers as
+ * anything the Forge makes, so the laws treat a wall and a shot alike: wood
+ * burns, splits and is soft; stone and concrete are hard and heavy, and acid
+ * eats them; glass breaks at a touch; steel shrugs off blows and will not
+ * burn, but acid eats it, it carries electricity and heat, and magnets pull
+ * it. `chips` are the colors it breaks into, `dust` what it kicks up (-1: none).
+ */
 export const MATERIALS = {
-  wood: { density: 0.6, friction: 0.65, color: 0xb47c43, edge: 0x6e4a26, strength: 3.2, points: 50, matter: matterOf({ burns: 0.6, dissolves: 0.4 }) },
-  stone: { density: 2.4, friction: 0.8, color: 0x9298a2, edge: 0x5a5f68, strength: 9, points: 100, matter: matterOf({ dissolves: 0.5 }) },
-  glass: { density: 0.5, friction: 0.3, color: 0x9fdcf5, edge: 0x4f9cc0, strength: 1.1, points: 30, matter: INERT },
+  wood: {
+    density: 0.6,
+    friction: 0.65,
+    color: 0xb47c43,
+    edge: 0x6e4a26,
+    strength: 3.2,
+    points: 50,
+    matter: matterOf({ burns: 0.6, dissolves: 0.4, hard: 0.35 }),
+    chips: [0xb47c43, 0x6e4a26, 0xd09a5e],
+    dust: 0x8a7a66,
+  },
+  stone: {
+    density: 2.4,
+    friction: 0.8,
+    color: 0x9298a2,
+    edge: 0x5a5f68,
+    strength: 9,
+    points: 100,
+    matter: matterOf({ dissolves: 0.5, hard: 0.8 }),
+    chips: [0x9298a2, 0x5a5f68, 0xaab0b9],
+    dust: 0x9a9aa4,
+  },
+  glass: {
+    density: 0.5,
+    friction: 0.3,
+    color: 0x9fdcf5,
+    edge: 0x4f9cc0,
+    strength: 1.1,
+    points: 30,
+    matter: matterOf({ hard: 0.6, melts: 0.2 }),
+    chips: [0x9fdcf5, 0xe4f7ff],
+    dust: -1,
+  },
+  concrete: {
+    density: 2.3,
+    friction: 0.85,
+    color: 0xb3ada2,
+    edge: 0x5f5a52,
+    strength: 7,
+    points: 90,
+    matter: matterOf({ dissolves: 0.35, hard: 0.72, iron: 0.15 }),
+    chips: [0xb3ada2, 0x8c867b, 0x9a5b33],
+    dust: 0xc4beb2,
+  },
+  metal: {
+    density: 3.4,
+    friction: 0.45,
+    color: 0x8ea2b6,
+    edge: 0x3d4a58,
+    strength: 16,
+    points: 120,
+    matter: matterOf({ hard: 0.9, conducts: 1, dissolves: 0.85, iron: 1 }),
+    chips: [0x8ea2b6, 0x3d4a58, 0xd9e2ec],
+    dust: -1,
+  },
 } as const
 
 export const BUG = {
@@ -445,8 +513,11 @@ export const BUG = {
   edge: 0x7d2f8f,
   strength: 1,
   points: 500,
-  matter: matterOf({ burns: 0.5, conducts: 0.5, dissolves: 1 }),
+  matter: matterOf({ burns: 0.5, conducts: 0.5, dissolves: 1, hard: 0.15 }),
 }
+
+/** The ground's matter: packed earth, hard enough to break what falls on it. */
+const EARTH = matterOf({ hard: 0.6 })
 
 // ---------------------------------------------------------------------------
 // Shapes
@@ -680,6 +751,7 @@ function addBody(
     fuse: -1,
     decay: 0,
     char: 0,
+    warm: 0,
   }
   g.bodies.push(body)
 
@@ -751,13 +823,13 @@ function shotsFor(bugs: number): number {
 }
 
 /**
- * A bunker: two thick stone walls, a bug sheltering between them and a heavy
- * roof across. Hard to knock down; easier to burn, shock or lob into from above
- * once the roof is off. Answers the roof's top.
+ * A bunker: two thick walls, a bug sheltering between them and a heavy roof
+ * across. Hard to knock down; easier to burn, shock, eat away or lob into from
+ * above once the roof is off. Answers the roof's top.
  */
-function bunker(g: Game, cx: number, bottom: number, w: number, h: number, roof: BlockMaterial = 'stone'): number {
-  block(g, 'stone', cx - w / 2 + 0.35, bottom, 0.7, h)
-  block(g, 'stone', cx + w / 2 - 0.35, bottom, 0.7, h)
+function bunker(g: Game, cx: number, bottom: number, w: number, h: number, roof: BlockMaterial = 'stone', wall: BlockMaterial = 'stone'): number {
+  block(g, wall, cx - w / 2 + 0.35, bottom, 0.7, h)
+  block(g, wall, cx + w / 2 - 0.35, bottom, 0.7, h)
   bug(g, cx, bottom)
   block(g, roof, cx, bottom + h, w + 0.3, 0.4)
 
@@ -860,14 +932,46 @@ const LEVELS: Level[] = [
       bug(g, 22.6, top)
     },
   },
+  {
+    // Steel shrugs off blows, but not acid, a shock run through it, heat or a magnet.
+    title: 'The steel cage',
+    shots: 4,
+    build: g => {
+      bug(g, 14.5, 0)
+      let top = room(g, 14.5, 0, 2.2, 1.3, 'wood')
+      bug(g, 14.5, top)
+      bug(g, 19, 0)
+      top = room(g, 19, 0, 2.6, 1.5, 'metal')
+      bug(g, 19, top)
+      bug(g, 23.4, 0)
+      room(g, 23.4, 0, 1.8, 1.2, 'glass', 'metal')
+    },
+  },
+  {
+    // Concrete cracks under hard, heavy blows and blasts; soft things bounce off it.
+    title: 'The bunker line',
+    shots: 5,
+    build: g => {
+      let top = bunker(g, 14.2, 0, 2.6, 1.2, 'concrete', 'concrete')
+      bug(g, 14.2, top)
+      top = bunker(g, 18.8, 0, 2.8, 1.3, 'metal', 'concrete')
+      top = room(g, 18.8, top, 2.2, 1.2, 'wood')
+      bug(g, 18.8, top)
+      bug(g, 23.2, 0)
+      top = room(g, 23.2, 0, 2, 1.4, 'concrete', 'wood')
+      bug(g, 23.2, top)
+    },
+  },
 ]
 
-/** How a generated level leans: its name, and which materials its builders draw. */
-const THEMES: { name: string; mats: BlockMaterial[] }[] = [
-  { name: 'Bug nest', mats: ['wood', 'glass', 'stone', 'wood'] },
-  { name: 'Timber yard', mats: ['wood', 'wood', 'wood', 'glass'] },
-  { name: 'Glass works', mats: ['glass', 'glass', 'wood', 'stone'] },
-  { name: 'Stone fort', mats: ['stone', 'stone', 'wood', 'glass'] },
+/** How a generated level leans: its name, which materials its builders draw, and what its bunkers' walls are. */
+const THEMES: { name: string; mats: BlockMaterial[]; wall: BlockMaterial }[] = [
+  { name: 'Bug nest', mats: ['wood', 'glass', 'stone', 'metal', 'concrete', 'wood'], wall: 'stone' },
+  { name: 'Timber yard', mats: ['wood', 'wood', 'wood', 'glass'], wall: 'stone' },
+  { name: 'Glass works', mats: ['glass', 'glass', 'wood', 'stone'], wall: 'stone' },
+  { name: 'Stone fort', mats: ['stone', 'stone', 'wood', 'glass'], wall: 'stone' },
+  { name: 'Steel mill', mats: ['metal', 'metal', 'wood', 'glass'], wall: 'metal' },
+  { name: 'Bunker line', mats: ['concrete', 'concrete', 'metal', 'wood'], wall: 'concrete' },
 ]
 
 /**
@@ -905,7 +1009,7 @@ function generated(level: number): Level {
         const cx = left + span / 2
         let top = 0
         if (kind === 'bunker') {
-          top = bunker(g, cx, 0, base, 1 + rnd() * 0.4, rnd() < 0.5 ? 'stone' : mat())
+          top = bunker(g, cx, 0, base, 1 + rnd() * 0.4, rnd() < 0.5 ? theme.wall : mat(), theme.wall)
         } else if (kind === 'overhang') {
           top = overhang(g, cx, 0, base, 1.2 + rnd() * 0.4, mat(), reach)
         } else if (kind === 'heap') {
@@ -1004,6 +1108,7 @@ export function loadLevel(g: Game, level: number): void {
   g.pellets = []
   const ground = makeBody(g, 'ground', 'ground', WORLD_W / 2, -5, 400, 10, Infinity, 0.8, 0x4a3524)
   ground.r = 400
+  ground.matter = EARTH
   spec.build(g)
   g.shots = spec.shots ?? shotsFor(bugsLeft(g))
   g.maxShots = g.shots
@@ -1633,13 +1738,42 @@ function jointImpulse(j: Joint): void {
 }
 
 /** A piercing shot moving fast enough, and the wood, glass or bug it would run through. */
+/**
+ * How keen and hard an edge a thing strikes with: a sword's is high, a ball's
+ * none. A piercing thing's is at least a blade's.
+ */
+function edgeOf(b: Body): number {
+  return Math.max(b.matter.sharp * b.matter.hard, hasTrait(b, 'piercing') ? 0.9 : 0)
+}
+
+/**
+ * A shot that cuts clean through what it met: its edge well harder than what
+ * it struck, and going fast enough. A blade goes through wood, glass and
+ * bugs; nothing short of a diamond's edge goes through stone or steel.
+ */
 function pierced(A: Body, B: Body): { shot: Body; victim: Body } | null {
   const pair = A.kind === 'shot' ? { shot: A, victim: B } : B.kind === 'shot' ? { shot: B, victim: A } : null
-  if (!pair || !hasTrait(pair.shot, 'piercing')) return null
+  if (!pair) return null
   const v = pair.victim
-  if (v.kind !== 'bug' && !(v.kind === 'block' && (v.mat === 'wood' || v.mat === 'glass'))) return null
+  if (v.kind !== 'bug' && v.kind !== 'block') return null
+  if (edgeOf(pair.shot) < v.matter.hard + 0.25) return null
 
   return Math.hypot(pair.shot.vx, pair.shot.vy) > 4 ? pair : null
+}
+
+/**
+ * How much of a blow a thing of matter `b` feels from one of matter `s`: the
+ * harder the striker than it, the more (a pillow hardly scratches stone, a
+ * hammer cracks it, and both squash a bug), and a keen edge harder than it
+ * more again (an axe splits wood, and only dents steel). Matter rated before
+ * there was hardness counts as middling hard and blunt.
+ */
+export function felt(s: Matter, b: Matter): number {
+  const sh = s.hard ?? 0.5
+  const bh = b.hard ?? 0.5
+  const harm = Math.min(2, Math.max(0.15, (sh + 0.25) / (bh + 0.25)))
+
+  return harm * (1 + 3 * (s.sharp ?? 0) * Math.max(0, sh - bh))
 }
 
 /** A sticky shot that has not stuck yet, and what it touched. */
@@ -1650,21 +1784,22 @@ function stickyPair(A: Body, B: Body): { shot: Body; other: Body } | null {
   return pair
 }
 
-/** Magnets tug on blocks and bugs while their turn runs. */
+/** Magnets tug on what has iron in it while their turn runs, the more iron the harder. */
 function magnetism(g: Game): void {
   if (g.phase !== 'flying') return
   for (const m of g.bodies) {
     if (m.kind !== 'shot' || m.dead || !hasTrait(m, 'magnetic')) continue
     for (const b of g.bodies) {
       if (b === m || b.invMass === 0 || b.dead || b.kind === 'shot') continue
+      const pull = b.matter.iron
+      if (pull < 0.05) continue
       const dx = m.x - b.x
       const dy = m.y - b.y
       const d = Math.hypot(dx, dy)
       if (d > 6 || d < 1e-3) continue
       // Falling off with distance, not its square: strong enough at a few
-      // meters to beat the friction holding a stone post down.
-      const pull = b.mat === 'stone' ? 1 : b.mat === 'wood' ? 0.4 : b.mat === 'bug' ? 0.35 : 0.25
-      const f = (50 * pull) / Math.max(0.7, d)
+      // meters to beat the friction holding a steel post down.
+      const f = (70 * pull) / Math.max(0.7, d)
       const dvb = Math.min(0.6, f * DT * b.invMass)
       b.vx += (dx / d) * dvb
       b.vy += (dy / d) * dvb
@@ -1722,7 +1857,9 @@ function physicsStep(g: Game): void {
       const through = g.time > GRACE ? pierced(b1, b2) : null
       if (through) {
         destroy(g, through.victim)
-        const k = through.victim.mat === 'glass' ? 0.93 : through.victim.mat === 'wood' ? 0.82 : 0.9
+        // The stronger what it cut through, the more it slowed it.
+        const held = Number.isFinite(through.victim.strength) ? through.victim.strength : 10
+        const k = Math.max(0.6, Math.min(0.97, 1 - 0.04 * held))
         through.shot.vx *= k
         through.shot.vy *= k
         g.arbiters.delete(key)
@@ -1775,8 +1912,10 @@ function physicsStep(g: Game): void {
   for (const arb of g.arbiters.values()) {
     const impact = preStep(arb, invDt)
     if (isLive && impact > 0) {
-      arb.a.hit += impact
-      arb.b.hit += impact
+      // The same blow on both, felt by each as hard as the other is against it.
+      arb.a.hit += impact * felt(arb.b.matter, arb.a.matter)
+      arb.b.hit += impact * felt(arb.a.matter, arb.b.matter)
+      if (impact > 1.5) knock(g, arb, impact)
       // A hard landing kicks up dust where it lands.
       if (impact > 2.5 && (arb.a.kind === 'ground' || arb.b.kind === 'ground')) {
         const c = arb.cs[0]!
@@ -1874,6 +2013,40 @@ function debris(g: Game, b: Body, n: number, colors: number[]): void {
   }
 }
 
+/** A few chips knocked off a body at a point, flying back the way the blow came. */
+function chips(g: Game, x: number, y: number, n: number, colors: readonly number[]): void {
+  for (let i = 0; i < n; i++) {
+    const ang = Math.PI * (0.15 + Math.random() * 0.7)
+    const sp = 1.5 + Math.random() * 2.5
+    particle(g, 'chunk', x, y, Math.cos(ang) * sp * (Math.random() < 0.5 ? -1 : 1), Math.sin(ang) * sp, 0.7 + Math.random() * 0.4, colors[i % colors.length]!, 0.07 + Math.random() * 0.07, (Math.random() - 0.5) * 20)
+  }
+}
+
+const SPARKS = [0xfff3b0, 0xffd166, 0xffffff]
+
+/**
+ * What a blow looks like where it lands: steel striking something hard throws
+ * sparks, and a block that felt it sheds chips of itself, and dust if it has any.
+ */
+function knock(g: Game, arb: Arbiter, impact: number): void {
+  const { a, b } = arb
+  if (a.kind === 'ground' || b.kind === 'ground') return
+  const c = arb.cs[0]!
+  const steel = (s: Body, o: Body) => s.matter.iron >= 0.5 && s.matter.hard >= 0.7 && o.matter.hard >= 0.6
+  if (impact > 3 && (steel(a, b) || steel(b, a))) burst(g, c.x, c.y, Math.min(8, 2 + Math.round(impact / 3)), SPARKS, 3.5)
+  for (const [s, v] of [
+    [a, b],
+    [b, a],
+  ] as const) {
+    if (v.kind !== 'block' || v.dead || !(v.mat in MATERIALS)) continue
+    const blow = impact * felt(s.matter, v.matter)
+    if (blow < v.strength * 0.3) continue
+    const m = MATERIALS[v.mat as BlockMaterial]
+    chips(g, c.x, c.y, Math.min(4, 1 + Math.round((blow / v.strength) * 3)), m.chips)
+    if (m.dust >= 0) puff(g, c.x, c.y, 1, m.dust, 0.4, 0.3, 1)
+  }
+}
+
 /** Points won, rising from where they were won. */
 function popup(g: Game, x: number, y: number, text: string, color: number): void {
   g.effects.push({ kind: 'score', x, y, t: 0, life: 1.1, r: 0, color, text })
@@ -1907,8 +2080,10 @@ function destroy(g: Game, b: Body): void {
     const m = MATERIALS[b.mat as BlockMaterial]
     g.score += m.points
     const n = Math.min(12, 3 + Math.round(b.hw * b.hh * 12))
-    debris(g, b, n, b.fire > 0 ? [0x3a2a20, 0x5c5c66] : b.mat === 'glass' ? [m.color, 0xe4f7ff] : [m.color, m.edge, shade(m.color, 1.15)])
-    puff(g, b.x, b.y, b.mat === 'glass' ? 1 : 2, b.fire > 0 ? 0x4a4a52 : b.mat === 'stone' ? 0x9a9aa4 : 0x8a7a66, Math.max(b.hw, b.hh), 0.35)
+    debris(g, b, n, b.fire > 0 ? [0x3a2a20, 0x5c5c66] : [...m.chips])
+    if (b.fire > 0 || m.dust >= 0) puff(g, b.x, b.y, 2, b.fire > 0 ? 0x4a4a52 : m.dust, Math.max(b.hw, b.hh), 0.35)
+    // Steel torn apart throws sparks.
+    if (b.matter.iron >= 0.5) burst(g, b.x, b.y, 6, SPARKS, 3)
   } else if (b.kind === 'shot' && !b.shard && (hasTrait(b, 'fragile') || b.frost > 0)) {
     shatter(g, b)
   } else if (b.kind === 'shot' && b.decay >= 1) {
@@ -1960,8 +2135,8 @@ function cull(g: Game): void {
   let removed = false
   for (const b of g.bodies) {
     if (b.invMass > 0 && !b.dead) {
-      // Frozen, it breaks at a fraction of the blow.
-      const strength = b.frost > 0 ? brittle(b) : b.strength
+      // Frozen, it breaks at a fraction of the blow; part eaten away, what is left holds less.
+      const strength = (b.frost > 0 ? brittle(b) : b.strength) * (1 - 0.75 * Math.min(1, b.decay))
       // A knock that does not break a block still weakens it.
       if (b.hit > strength * 0.25 && b.kind !== 'shot') b.wear += b.hit * 0.3
       if (b.hit > strength || b.wear > b.strength || b.decay >= 1) destroy(g, b)
@@ -2081,7 +2256,8 @@ function spawnShot(g: Game, spec: ShotSpec, x: number, y: number, scale: number)
   const b = addBody(g, 'shot', 'shot', x, y, info, spec.density, spec.friction, color)
   b.bounce = spec.bounce
   b.spec = spec
-  b.matter = spec.matter ?? INERT
+  // Rated before some of the numbers were: those it lacks are the plain ones.
+  b.matter = { ...INERT, ...spec.matter }
   b.scale = scale
   b.gscale = isFloaty(spec) ? 0.3 : 1
   b.drag = shotDrag(info.hw * 2, info.hh * 2, b.mass) * (isFloaty(spec) ? 2.5 : 1)
@@ -2240,9 +2416,10 @@ function vortex(g: Game, src: Body): void {
 // Matter: the world's chemistry. Every body and every round has the same nine
 // numbers (`Matter`), and the same few laws work between any two that touch,
 // whatever they are: heat sets alight what burns, thaws what is frozen and
-// melts what melts; cold puts fire out and freezes, wet things fastest; water
-// puts fire out and soaks in; electricity runs through what conducts, wet
-// things too, jolting what it runs through; acid eats what it dissolves. What
+// melts what melts once past its melting point; cold puts fire out and
+// freezes, wet things fastest; water puts fire out and soaks in; electricity
+// runs through what conducts, wet things too, jolting what it runs through,
+// and what conducts carries heat as well; acid eats what it dissolves. What
 // is alight is as hot as fire, what is lit and explodes goes off, and what
 // breaks open spills what it held on what is near. Nothing here asks what a
 // thing is called.
@@ -2264,13 +2441,23 @@ function frailty(b: Body): number {
   return b.kind === 'bug' ? 2.5 : 1
 }
 
-/** How hot it is now: alight, the hotter the more it burns; frozen, as cold as ice. */
+/** How hot it is now: alight, the hotter the more it burns; frozen, as cold as ice; else its own heat, or what it has taken in. */
 function heatOf(b: Body): number {
   if (b.fire > 0) return 0.5 + 0.5 * Math.max(b.matter.burns, b.matter.heat)
   if (b.frost > 0) return Math.min(b.matter.heat, -0.5)
 
-  return b.matter.heat
+  return Math.max(b.matter.heat, b.warm)
 }
+
+/** How well heat runs into and through it: what conducts electricity well carries heat too. */
+function carriesHeat(b: Body): number {
+  return Math.max(0, b.matter.conducts - 0.5) * 2
+}
+
+/** Taken-in heat past this glows, and holds the turn while it cools. */
+const GLOWING = 0.35
+/** How fast taken-in heat leaves a thing, a second. */
+const COOLING = 0.15
 
 /** What it has left to burn: what has burnt is charred, and has less. */
 function fuel(b: Body): number {
@@ -2301,6 +2488,7 @@ function inherit(from: Body, to: Body): void {
   to.fuse = from.fuse
   to.decay = from.decay
   to.char = from.char
+  to.warm = from.warm
 }
 
 function givesOff(b: Body): Exposure | null {
@@ -2320,14 +2508,25 @@ function expose(g: Game, b: Body, e: Exposure, dose: number): void {
       if (b.fire === 0) puff(g, b.x, b.y + b.hh, 4, 0xe8edf5, b.hw * 2, 0.4)
     }
     b.kindle = 0
+    // Water on something hot hisses off as steam, cooling it.
+    if (b.warm > 0.2) {
+      b.warm = Math.max(0, b.warm - e.wet * dose * 6)
+      if (Math.random() < 0.3) puff(g, b.x, b.y + b.hh, 1, 0xe8edf5, b.hw * 2, 0.35)
+    }
     // What is hot itself turns it to steam.
-    if (m.heat < 0.5) b.soak = Math.max(b.soak, 2 + 4 * e.wet)
+    if (Math.max(m.heat, b.warm) < 0.5) b.soak = Math.max(b.soak, 2 + 4 * e.wet)
   }
   if (e.heat > 0.2) {
     const h = e.heat
     b.chill = 0
     if (b.frost > 0) b.frost = Math.max(0, b.frost - h * dose * 4)
-    if (m.melts > 0) b.decay += 0.5 * h * m.melts * dose
+    // What carries heat takes it in, the heavier the slower, to a little short
+    // of what heats it, so heat runs along a chain of such things and fades as it goes.
+    const take = carriesHeat(b)
+    if (take > 0 && b.warm < h * 0.95) b.warm = Math.min(h * 0.95, b.warm + (h - b.warm) * Math.min(1, (3 * take * dose) / Math.max(1, b.mass)))
+    // Past its melting point it melts: the less readily it melts, the hotter it has to be.
+    const over = h - (1 - m.melts)
+    if (m.melts > 0 && over > 0) b.decay += 0.6 * over * dose
     if (b.soak > 0) b.soak = Math.max(0, b.soak - h * dose * 3)
     else if (!isWet(b) && b.frost <= 0 && b.fire <= 0 && fuel(b) >= 0.1) {
       b.kindle += KINDLING * h * fuel(b) * dose
@@ -2338,6 +2537,7 @@ function expose(g: Game, b: Body, e: Exposure, dose: number): void {
   } else if (e.heat < -0.2) {
     const c = -e.heat
     b.kindle = 0
+    b.warm = Math.max(0, b.warm - c * dose * 4)
     if (b.fire > 0) b.fire = Math.max(0, b.fire - c * dose * 6)
     if (m.heat < 0.3 && b.frost <= 0) {
       b.chill += c * c * dose * (isWet(b) ? 6 : 1.5)
@@ -2504,6 +2704,7 @@ function stepMatter(g: Game): void {
     if (b.soak > 0) b.soak = Math.max(0, b.soak - DT)
     if (b.frost > 0) b.frost = Math.max(0, b.frost - DT)
     if (b.zap > 0) b.zap = Math.max(0, b.zap - DT)
+    if (b.warm > 0) b.warm = Math.max(0, b.warm - COOLING * DT)
     b.kindle = Math.max(0, b.kindle - 0.5 * DT)
     b.chill = Math.max(0, b.chill - 0.5 * DT)
   }
@@ -2512,17 +2713,18 @@ function stepMatter(g: Game): void {
   if (after - before > 0.05 * DT) g.eaten = g.time
 }
 
-/**
- * What is at work on a body, a letter each, for drawing: blackened by fire
- * (c), alight (f), lit to go off (x), soaked (w), frozen (i), shocked (z),
- * being eaten (a).
- */
 /** Burnt this much, a thing looks blackened. */
 const CHARRED = 0.12
 
+/**
+ * What is at work on a body, a letter each, for drawing: blackened by fire
+ * (c), glowing hot (h), alight (f), lit to go off (x), soaked (w), frozen (i),
+ * shocked (z), being eaten (a).
+ */
 export function elementCode(b: Body): string {
   let s = ''
   if (b.char >= CHARRED) s += 'c'
+  if (b.warm >= GLOWING && b.fire <= 0) s += 'h'
   if (b.fire > 0) s += 'f'
   if (b.fuse >= 0) s += 'x'
   if (b.soak > 0) s += 'w'
@@ -2786,8 +2988,12 @@ function strike(g: Game, p: Pellet, b: Body): void {
   b.vx += jx * b.invMass
   b.vy += jy * b.invMass
   b.av += b.invI * ((p.x - b.x) * jy - (p.y - b.y) * jx)
-  b.hit += blow.hit
-  b.wear += blow.wear
+  // Felt as hard as the round is against it: a bullet cracks stone, a water jet only shoves it.
+  const k = r.matter ? felt(r.matter, b.matter) : 1
+  b.hit += blow.hit * k
+  b.wear += blow.wear * k
+  // Something hard striking steel throws sparks.
+  if (r.punch >= 0.8 && (r.matter?.hard ?? 0.5) >= 0.7 && b.matter.iron >= 0.5) burst(g, p.x, p.y, 3, SPARKS, 3)
   wash(g, r.matter, b, HIT_DOSE)
   if (r.blast <= 0 && r.bounce > 0 && p.bounces < MAX_BOUNCES && sp * r.bounce > 2) {
     const { nx, ny } = faceNormal(b, p.x, p.y)
@@ -2893,8 +3099,8 @@ export function trigger(g: Game): boolean {
 function isCalm(g: Game): boolean {
   if (g.effects.some(fx => fx.kind === 'vortex')) return false
   if (g.pellets.length > 0 || g.bodies.some(b => b.ammoLeft > 0)) return false
-  // Fire burns itself out, a lit fuse goes off, and acid finishes eating.
-  if (g.bodies.some(b => !b.dead && (b.fire > 0 || b.fuse >= 0 || b.corrode > 0))) return false
+  // Fire burns itself out, a lit fuse goes off, acid finishes eating, and what glows hot cools.
+  if (g.bodies.some(b => !b.dead && (b.fire > 0 || b.fuse >= 0 || b.corrode > 0 || b.warm >= GLOWING))) return false
   // Nor while something touching it is eating it away.
   if (g.time - g.eaten < 0.1) return false
   for (const b of g.bodies) {
@@ -3424,6 +3630,7 @@ function paintBody(buf: Uint32Array, v: View, b: Body): void {
 function tint(b: Body, c: number): number {
   if (b.zap > 0) return mix(c, 0xfff36b, 0.6)
   if (b.fire > 0) return mix(c, 0xff6a2a, 0.55)
+  if (b.warm >= GLOWING) return mix(c, 0xff4a12, 0.25 + 0.5 * b.warm)
   if (b.frost > 0) return mix(c, 0xdff6ff, 0.6)
   if (b.corrode > 0) return mix(c, 0x8cff3a, 0.4)
   if (b.soak > 0) return mix(c, 0x3fa7ff, 0.3)
@@ -3515,16 +3722,7 @@ function paintBox(
   const pr1 = Math.min(PH - 1, Math.ceil(PH - (y - ey + 1) * s))
   const edgeW = 0.9 / s
   const bordered = hw * s >= 1.5 && hh * s >= 1.5
-  const edge =
-    mat === 'wood'
-      ? MATERIALS.wood.edge
-      : mat === 'stone'
-        ? MATERIALS.stone.edge
-        : mat === 'glass'
-          ? MATERIALS.glass.edge
-          : mat === 'bug'
-            ? BUG.edge
-            : shade(color, 0.6)
+  const edge = mat in MATERIALS ? MATERIALS[mat as BlockMaterial].edge : mat === 'bug' ? BUG.edge : shade(color, 0.6)
 
   for (let pr = pr0; pr <= pr1; pr++) {
     const wy = (PH - (pr + 0.5)) / s - 1
@@ -3539,6 +3737,9 @@ function paintBox(
       if (bordered && (hw - Math.abs(lx) < edgeW || hh - Math.abs(ly) < edgeW)) col = edge
       else if (mat === 'glass' && Math.abs(lx - ly * 0.6) < edgeW * 0.6) col = 0xe4f7ff
       else if (mat === 'wood' && hash(Math.round(lx * 3), 7) > 0.8) col = shade(color, 0.88)
+      // Steel's sheen, and concrete's grit.
+      else if (mat === 'metal' && Math.abs(ly - hh * 0.4) < edgeW * 0.5) col = shade(color, 1.25)
+      else if (mat === 'concrete' && hash(Math.round(lx * 9), Math.round(ly * 9)) > 0.86) col = shade(color, 0.82)
       else if (mat === 'shot' && ly > hh * 0.35) col = shade(color, 1.15)
       buf[pr * PW + px] = col
     }

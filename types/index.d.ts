@@ -11,9 +11,10 @@ export type Facing = 'right' | 'left' | 'up' | 'down' | 'around'
 export type Aim = 'target' | 'ahead' | 'back' | 'up' | 'down'
 
 /**
- * What a thing is made of and carries, as the world's chemistry reads it.
- * Each 0 to 1, but heat -1 to 1; the Forge rates every object and every round
- * on all nine, and the game's laws work between any two that touch.
+ * What a thing is made of and carries, as the world's chemistry and its
+ * knocks read it. Each 0 to 1, but heat -1 to 1; the Forge rates every object
+ * and every round on all twelve, and the game's laws work between any two
+ * that touch.
  */
 export type Matter = {
   /** -1 freezing, 0 room temperature, 1 burning. */
@@ -34,6 +35,12 @@ export type Matter = {
   acid: number
   /** How readily acid eats it. */
   dissolves: number
+  /** How hard it is: 0 jelly or foam, 1 diamond. A blow hurts by how much harder the striker is. */
+  hard: number
+  /** The edge or point it strikes with: 0 blunt, 1 a razor. A keen, hard edge cuts what is softer. */
+  sharp: number
+  /** How much iron or steel is in it, which magnets pull. */
+  iron: number
 }
 
 /**
