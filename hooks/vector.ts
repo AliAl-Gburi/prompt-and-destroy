@@ -4,8 +4,10 @@
 // in flight, the whole flight recorded (replay.ts) and drawn as one SVG
 // animation (animation) that the surface plays at its own frame rate.
 //
-// Pure, like engine.ts. Plain shapes, strokes, opacity and SMIL only (no
-// gradients, filters or references), so it draws the same wherever scrubbed.
+// Pure, like engine.ts. Shapes, strokes, gradients, opacity and SMIL, and
+// `<use>` of what a picture defines itself: what the desktop's sanitizer keeps
+// (no filters, which cost every frame an animation redraws). Each picture
+// defines the gradients it uses once, at its end (`withPaints`).
 
 import {
   BUG,
@@ -168,16 +170,107 @@ function place(x: number, y: number, a: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// Paints: the gradients the pictures are lit with. Each is drawn on the box
+// of what it fills, so one wood serves every plank, a diagonal one lighting
+// a plank from above and a post from its left; and a picture defines only the
+// ones it uses, once, at its end (`withPaints`).
+
+const stop = (at: number, color: string, alpha = 1) => `<stop offset="${at}" stop-color="${color}"${alpha < 1 ? ` stop-opacity="${alpha}"` : ''}/>`
+const linear = (id: string, stops: string, dir: string) => `<linearGradient id="${id}"${dir}>${stops}</linearGradient>`
+const radial = (id: string, stops: string, at = '') => `<radialGradient id="${id}"${at}>${stops}</radialGradient>`
+/** Top to bottom, and top left to bottom right. */
+const DOWN = ' x2="0" y2="1"'
+const SLANT = ' x2="1" y2="1"'
+
+const PAINTS: Record<string, string> = {
+  // Blocks, lit from the upper left.
+  'pd-wood': linear('pd-wood', stop(0, '#dca46a') + stop(0.5, '#b47c43') + stop(1, '#87582b'), SLANT),
+  'pd-stone': linear('pd-stone', stop(0, '#b9bec8') + stop(0.5, '#9298a2') + stop(1, '#6b717c'), SLANT),
+  'pd-concrete': linear('pd-concrete', stop(0, '#d6d0c4') + stop(0.5, '#b3ada2') + stop(1, '#8b857a'), SLANT),
+  'pd-metal': linear('pd-metal', stop(0, '#c8d5e2') + stop(0.28, '#8ea2b6') + stop(0.5, '#c2d0de') + stop(0.72, '#7b8fa4') + stop(1, '#5a6c80'), SLANT),
+  'pd-glass': linear('pd-glass', stop(0, '#e2f8ff', 0.75) + stop(0.45, '#9fdcf5', 0.35) + stop(1, '#4fb0d8', 0.6), SLANT),
+  // A block's edges catching the light: lit along its top and left, shaded along its foot and right; steel's brighter.
+  'pd-bevel': linear('pd-bevel', stop(0, '#ffffff', 0.55) + stop(0.42, '#ffffff', 0.06) + stop(0.58, '#000000', 0.06) + stop(1, '#000000', 0.42), SLANT),
+  'pd-sheen': linear('pd-sheen', stop(0, '#ffffff', 0.9) + stop(0.4, '#ffffff', 0.12) + stop(0.6, '#000000', 0.08) + stop(1, '#000000', 0.5), SLANT),
+  // A bug's round shell, its eyes, and the shadow under things.
+  'pd-shell': radial('pd-shell', stop(0, '#f2c2ff') + stop(0.35, '#c865e0') + stop(0.8, '#9234b0') + stop(1, '#6a1f84'), ' fx="0.36" fy="0.28"'),
+  'pd-eye': radial('pd-eye', stop(0, '#ffffff') + stop(0.7, '#f3efff') + stop(1, '#cdc3e6'), ' fx="0.42" fy="0.36"'),
+  'pd-shadow': radial('pd-shadow', stop(0, '#000000', 0.5) + stop(0.55, '#000000', 0.22) + stop(1, '#000000', 0)),
+  // Fire, from its red tips down to its yellow root; its heart; a thing glowing hot; frost.
+  'pd-flame': linear('pd-flame', stop(0, '#ff2a12', 0.55) + stop(0.35, '#ff5420') + stop(0.75, '#ff9a1c') + stop(1, '#ffc93c'), DOWN),
+  'pd-core': linear('pd-core', stop(0, '#ffb347') + stop(0.55, '#ffe066') + stop(1, '#fff8d0'), DOWN),
+  'pd-heat': radial('pd-heat', stop(0, '#fff3a6', 0.95) + stop(0.35, '#ffb020', 0.85) + stop(0.75, '#ff6a1a', 0.7) + stop(1, '#ff3300', 0.55)),
+  'pd-ice': linear('pd-ice', stop(0, '#ffffff', 0.9) + stop(0.5, '#d6f4ff', 0.55) + stop(1, '#8fd6ff', 0.7), SLANT),
+  // A fireball: white at its heart, out through yellow and orange to a red that fades.
+  'pd-fireball': radial('pd-fireball', stop(0, '#fff7cc') + stop(0.3, '#ffd166') + stop(0.62, '#ff8a2a') + stop(0.86, '#e8451e', 0.9) + stop(1, '#b8261a', 0)),
+  // The bars and the words.
+  'pd-bar': linear('pd-bar', stop(0, '#111a40', 0.92) + stop(1, '#070b1a', 0.8), DOWN),
+  'pd-rule': linear('pd-rule', stop(0, '#ff8a3d', 0) + stop(0.12, '#ff8a3d') + stop(0.88, '#ffd166') + stop(1, '#ffd166', 0), ''),
+  'pd-gold': linear('pd-gold', stop(0, '#fff5bf') + stop(0.5, '#ffd166') + stop(1, '#ff9a1f'), DOWN),
+  'pd-brand': linear('pd-brand', stop(0, '#ff6f2a') + stop(1, '#ffc34d'), ''),
+  'pd-coin': radial('pd-coin', stop(0, '#fff7d4') + stop(0.5, '#ffd166') + stop(1, '#d4870f'), ' fx="0.35" fy="0.3"'),
+  'pd-leather': linear('pd-leather', stop(0, '#8a5d36') + stop(1, '#4a2d16'), SLANT),
+  'pd-cloud': radial('pd-cloud', stop(0, '#cdd8ff', 0.16) + stop(0.55, '#b9c6f5', 0.08) + stop(1, '#b9c6f5', 0)),
+  'pd-meteor': linear('pd-meteor', stop(0, '#ffffff') + stop(1, '#c8d4ff', 0), ''),
+}
+
+/**
+ * A paint made for a color, named for it (short: a flight has many): `ps-`
+ * a soft round puff of it, `pk-` a white-hot point glowing out into it,
+ * `pg-` light of it fading out, `pl-` a ball of it lit from its upper left.
+ */
+function colorPaint(id: string): string {
+  const m = /^p([skgl])-([0-9a-f]{6})$/.exec(id)
+  if (!m) return ''
+  const c = `#${m[2]}`
+  switch (m[1]) {
+    case 's':
+      return radial(id, stop(0, c, 0.9) + stop(0.5, c, 0.6) + stop(1, c, 0))
+    case 'k':
+      return radial(id, stop(0, '#ffffff') + stop(0.28, c) + stop(1, c, 0))
+    case 'g':
+      return radial(id, stop(0, c, 0.55) + stop(0.4, c, 0.22) + stop(1, c, 0))
+    default: {
+      const v = parseInt(m[2]!, 16)
+
+      return radial(id, stop(0, hexColor(mix(v, 0xffffff, 0.5))) + stop(0.5, c) + stop(1, hexColor(shade(v, 0.55))), ' fx="0.34" fy="0.3"')
+    }
+  }
+}
+
+/** A color's paint of a kind (see `colorPaint`): soft, spark, glow or lit, as a fill or stroke. */
+function tinted(kind: 's' | 'k' | 'g' | 'l', color: number): string {
+  return `url(#p${kind}-${hexColor(color).slice(1)})`
+}
+
+/** `body`, and after it every paint it uses and does not define itself, each once. */
+function withPaints(body: string): string {
+  let defs = ''
+  const done = new Set<string>()
+  for (const m of body.matchAll(/url\(#(p[a-z]{0,2}-[a-z0-9-]+)\)/g)) {
+    const id = m[1]!
+    if (done.has(id)) continue
+    done.add(id)
+    if (!body.includes(`id="${id}"`)) defs += PAINTS[id] ?? SKY_PAINTS[id] ?? colorPaint(id)
+  }
+
+  return defs ? `${body}<defs>${defs}</defs>` : body
+}
+
+// ---------------------------------------------------------------------------
 // The scenery, drawn once
 
 let scenery = ''
 
+/** A number to the whole pixel: what never moves is drawn at whole pixels, and its markup is the shorter. */
+const px = (v: number) => String(Math.round(v))
+
 function hillPath(f: (x: number) => number): string {
   // One line command, its points following: a point every half meter is smooth at this size.
-  let d = `M-4 ${n(sy(-1))}L-4 ${n(sy(f(view.x0)))}`
-  for (let x = view.x0; x <= view.x1 + 0.01; x += 0.5) d += ` ${n(sx(x))} ${n(sy(f(x)))}`
+  let d = `M-4 ${px(sy(-1))}L-4 ${px(sy(f(view.x0)))}`
+  for (let x = view.x0; x <= view.x1 + 0.01; x += 0.5) d += ` ${px(sx(x))} ${px(sy(f(x)))}`
 
-  return `${d} ${VIEW_W + 4} ${n(sy(f(view.x1)))} ${VIEW_W + 4} ${n(sy(-1))}Z`
+  return `${d} ${VIEW_W + 4} ${px(sy(f(view.x1)))} ${VIEW_W + 4} ${px(sy(-1))}Z`
 }
 
 /** The scenery: what never moves, drawn once a view, and what drifts and twinkles over it. */
@@ -186,10 +279,10 @@ function drawScenery(): string {
 }
 
 /**
- * What moves in the sky, at the clock's point: faint clouds drifting slowly
+ * What moves in the sky, at the clock's point: soft clouds drifting slowly
  * to and fro, spread over the sky's width and, in a tall one, down it (two
- * more there, where the world's own sky has no room for them); and a few
- * stars twinkling.
+ * more there, where the world's own sky has no room for them); a few stars
+ * twinkling; now and then a shooting star.
  */
 function ambience(): string {
   const across = VIEW_W / (WORLD_W * S)
@@ -203,13 +296,17 @@ function ambience(): string {
   if (deep > 1.6) clouds.push([330, 230, 110], [860, 280, 140])
   let out = ''
   clouds.forEach(([x, y, w], i) => {
-    const cx = n(x * across)
-    const cy = n(bar + (y - 34) * Math.max(1, deep))
+    const cx = x * across
+    const cy = bar + (y - 34) * Math.max(1, deep)
     const period = 150 + i * 23
+    // A long low body and the puffs heaped on it, each soft at its edge.
+    const puff = (dx: number, dy: number, rx: number, ry: number) => `<ellipse cx="${n(cx + dx * w)}" cy="${n(cy + dy * w)}" rx="${n(rx * w)}" ry="${n(ry * w)}"/>`
     out +=
-      `<g><animateTransform attributeName="transform" type="translate" values="0 0;${n(40 + w / 3)} 0;0 0" dur="${period}s" begin="${loop(period, i * 37)}" repeatCount="indefinite"/>` +
-      `<ellipse cx="${cx}" cy="${cy}" rx="${w / 2}" ry="${n(w / 7)}" fill="#c8d4ff" opacity="0.05"/>` +
-      `<ellipse cx="${n(Number(cx) + w / 6)}" cy="${n(Number(cy) - w / 14)}" rx="${n(w / 3.5)}" ry="${n(w / 8)}" fill="#c8d4ff" opacity="0.05"/></g>`
+      `<g fill="url(#pd-cloud)"><animateTransform attributeName="transform" type="translate" values="0 0;${n(40 + w / 3)} 0;0 0" dur="${period}s" begin="${loop(period, i * 37)}" repeatCount="indefinite"/>` +
+      puff(0.05, 0.02, 0.62, 0.2) +
+      puff(-0.18, -0.07, 0.3, 0.17) +
+      puff(0.16, -0.09, 0.36, 0.21) +
+      `</g>`
   })
   // Twinkling stars, each at its own pace, none over the moon.
   const mx = VIEW_W - 160
@@ -223,88 +320,156 @@ function ambience(): string {
       `<circle cx="${n(x)}" cy="${n(y)}" r="${n(1 + hash(i + 939) * 0.8)}" fill="#ffffff">` +
       `<animate attributeName="opacity" values="0.9;0.15;0.9" dur="${n(period)}s" begin="${loop(period, i * 0.7)}" repeatCount="indefinite"/></circle>`
   }
+  // A shooting star across the high sky every quarter of a minute or so, gone in a moment.
+  const period = 13.7
+  const sx0 = VIEW_W * 0.78
+  const sy0 = bar + 30
+  const time = `dur="${period}s" begin="${loop(period, 5)}" repeatCount="indefinite"`
+  out +=
+    `<g opacity="0"><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.01;0.035;0.06;1" ${time}/>` +
+    `<animateTransform attributeName="transform" type="translate" values="0 0;${n(-VIEW_W * 0.26)} 95;${n(-VIEW_W * 0.26)} 95" keyTimes="0;0.06;1" ${time}/>` +
+    `<path d="M${n(sx0)} ${n(sy0)}l70 -26" stroke="url(#pd-meteor)" stroke-width="2.2" stroke-linecap="round"/></g>`
 
   return out
+}
+
+/** The scenery's own paints, defined in it, so a flight drawn over it has them too. */
+const SKY_PAINTS: Record<string, string> = {
+  'pds-sky': linear('pds-sky', stop(0, '#070b1f') + stop(0.62, '#18275a') + stop(0.88, '#2f3d76') + stop(1, '#4b4a82'), DOWN),
+  'pds-dusk': radial('pds-dusk', stop(0, '#a07ee6', 0.34) + stop(0.5, '#6d61c9', 0.13) + stop(1, '#6d61c9', 0)),
+  'pds-band': radial('pds-band', stop(0, '#dfe6ff', 0.1) + stop(0.6, '#c9d3ff', 0.04) + stop(1, '#c9d3ff', 0)),
+  'pds-star': radial('pds-star', stop(0, '#ffffff', 0.75) + stop(0.25, '#dfe6ff', 0.25) + stop(1, '#dfe6ff', 0)),
+  'pds-halo': radial('pds-halo', stop(0, '#fff6d6', 0.42) + stop(0.24, '#f4efd8', 0.15) + stop(1, '#c8d4ff', 0)),
+  'pds-moon': radial('pds-moon', stop(0, '#fffef6') + stop(0.55, '#f2ecce') + stop(1, '#d2c79a'), ' fx="0.36" fy="0.32"'),
+  'pds-far': linear('pds-far', stop(0, '#3a5089') + stop(1, '#1e2b55'), DOWN),
+  'pds-mid': linear('pds-mid', stop(0, '#27386a') + stop(1, '#131d3d'), DOWN),
+  'pds-near': linear('pds-near', stop(0, '#1b2649') + stop(1, '#0c1429'), DOWN),
+  'pds-mist': linear('pds-mist', stop(0, '#aab8ff', 0) + stop(0.5, '#aab8ff', 0.11) + stop(1, '#aab8ff', 0), DOWN),
+  'pds-soil': linear('pds-soil', stop(0, '#5f432c') + stop(0.3, '#48331f') + stop(1, '#22170e'), DOWN),
+  'pds-turf': linear('pds-turf', stop(0, '#a3e886') + stop(0.3, '#62b14c') + stop(1, '#2c5925'), DOWN),
+  'pds-blade': linear('pds-blade', stop(0, '#b3f093') + stop(1, '#3a7631'), DOWN),
+  'pds-post': linear('pds-post', stop(0, '#c99360') + stop(0.45, '#97663a') + stop(1, '#5b3a1e'), ''),
+  'pds-vignette': radial('pds-vignette', stop(0.55, '#000000', 0) + stop(1, '#01020a', 0.42), ' cy="0.42" r="0.78"'),
 }
 
 function stillScenery(): string {
   if (scenery) return scenery
   const parts: string[] = []
-  // Sky in bands, deep blue overhead to dusk at the horizon.
-  const bands = Math.max(14, Math.round(sy(0) / 34))
-  for (let i = 0; i < bands; i++) {
-    const c = mix(0x0b1026, 0x2b3d6e, i / (bands - 1))
-    parts.push(`<rect x="0" y="${n((i * sy(0)) / bands)}" width="${VIEW_W}" height="${n(sy(0) / bands + 1)}" fill="${hexColor(c)}"/>`)
+  const top = sy(0)
+  const across = VIEW_W / (WORLD_W * S)
+  // The sky: deep overhead, dusky violet at the horizon where its glow lies
+  // low behind the hills; the galaxy's band rising across it, thick with
+  // faint stars.
+  parts.push(
+    `<rect width="${VIEW_W}" height="${px(top + 2)}" fill="url(#pds-sky)"/>`,
+    `<ellipse cx="${px(VIEW_W * 0.42)}" cy="${px(top)}" rx="${px(VIEW_W * 0.78)}" ry="${px(Math.min(top * 0.6, 280))}" fill="url(#pds-dusk)"/>`,
+  )
+  const bx = (t: number) => VIEW_W * (0.02 + 0.96 * t)
+  const by = (t: number) => top * (0.86 - 0.8 * t)
+  const tilt = n((Math.atan2(by(1) - by(0), bx(1) - bx(0)) * 180) / Math.PI)
+  let band = ''
+  for (let k = 0; k < 5; k++) {
+    const t = (k + 0.5) / 5
+    band += `<ellipse cx="${px(bx(t))}" cy="${px(by(t))}" rx="${px(VIEW_W * 0.16)}" ry="${px(20 + hash(k + 51) * 16)}" transform="rotate(${tilt} ${px(bx(t))} ${px(by(t))})"/>`
   }
-  // Stars, a few of them twinkling crosses, as many to a patch of sky however much there is.
-  // Each in one of four brightnesses, drawn together, the color said once.
+  parts.push(`<g fill="url(#pds-band)">${band}</g>`)
+  const dust: [number, number][] = []
+  for (let i = 0; i < Math.round(36 * across); i++) {
+    const t = hash(i + 1201)
+    const off = (hash(i + 1301) - 0.5) * (hash(i + 1401) + 0.2) * 60
+    dust.push([Math.round(bx(t) - off * 0.3), Math.round(by(t) + off)])
+  }
+  parts.push(`<path d="${dots(dust)}" stroke="#dfe6ff" stroke-width="1.1" stroke-linecap="round" opacity="0.5"/>`)
+  // Stars, as many to a patch of sky however much there is, in four
+  // brightnesses; a few of the brightest glowing, with a twinkle's cross.
   const stars = Math.round((70 * VIEW_W * sy(3.5)) / (WORLD_W * S * (WORLD_H - 4.5) * S))
-  const lit = ['', '', '', '']
+  const lit: [number, number][][] = [[], [], [], []]
   let crosses = ''
+  let glows = ''
   for (let i = 0; i < stars; i++) {
-    const x = hash(i) * VIEW_W
-    const y = hash(i + 101) * sy(3.5)
-    const r = 0.6 + hash(i + 202) * 1.2
+    const x = Math.round(hash(i) * VIEW_W)
+    const y = Math.round(hash(i + 101) * sy(3.5))
     const o = Math.min(3, Math.floor(hash(i + 303) * 4))
     if (i % 11 === 0) {
-      const k = r * 3
-      crosses += `M${n(x - k)} ${n(y)}H${n(x + k)}M${n(x)} ${n(y - k)}V${n(y + k)}`
+      const k = Math.round(3 + hash(i + 202) * 3)
+      crosses += `M${x - k} ${y}h${2 * k}M${x} ${y - k}v${2 * k}`
+      glows += `<circle cx="${x}" cy="${y}" r="${px(k * 1.6)}"/>`
     }
-    lit[o] += `<circle cx="${n(x)}" cy="${n(y)}" r="${n(r)}"/>`
+    lit[o]!.push([x, y])
   }
-  lit.forEach((dots, o) => parts.push(`<g fill="#dfe6ff" opacity="${n(0.42 + o * 0.17)}">${dots}</g>`))
-  if (crosses) parts.push(`<path d="${crosses}" stroke="#dfe6ff" stroke-width="1" opacity="0.7"/>`)
-  // The moon with a halo and craters, high on the right, under the bar along the top.
+  lit.forEach((pts, o) => parts.push(`<path d="${dots(pts)}" stroke="#e6ecff" stroke-width="${n(1.3 + o * 0.6)}" stroke-linecap="round" opacity="${n(0.42 + o * 0.17)}"/>`))
+  if (glows) parts.push(`<g fill="url(#pds-star)">${glows}</g>`, `<path d="${crosses}" stroke="#eef2ff" stroke-width="1" opacity="0.7"/>`)
+  // The moon, high on the right under the bar along the top: its light
+  // spread round it, lit from the upper left, its far side in shadow, its
+  // seas and craters soft.
   const mx = VIEW_W - 160
   const my = 44 + 34 * view.k
   parts.push(
-    `<circle cx="${mx}" cy="${n(my)}" r="70" fill="#f4f1de" opacity="0.05"/>`,
-    `<circle cx="${mx}" cy="${n(my)}" r="48" fill="#f4f1de" opacity="0.07"/>`,
-    `<circle cx="${mx}" cy="${n(my)}" r="32" fill="#f4f1de" stroke="#cfc8a4" stroke-width="2.5"/>`,
-    `<path d="M${mx + 12} ${n(my - 26)}A32 32 0 0 1 ${mx + 12} ${n(my + 26)}A26 26 0 0 0 ${mx + 12} ${n(my - 26)}Z" fill="#d9d2b0" opacity="0.6"/>`,
-    `<circle cx="${mx - 10}" cy="${n(my - 8)}" r="7" fill="#e3ddbf"/>`,
-    `<circle cx="${mx + 11}" cy="${n(my + 10)}" r="5" fill="#e3ddbf"/>`,
-    `<circle cx="${mx + 9}" cy="${n(my - 14)}" r="3.5" fill="#e3ddbf"/>`,
+    `<circle cx="${mx}" cy="${n(my)}" r="150" fill="url(#pds-halo)"/>`,
+    `<circle cx="${mx}" cy="${n(my)}" r="32" fill="url(#pds-moon)"/>`,
+    `<path d="M${mx + 6} ${n(my - 31.4)}A32 32 0 0 1 ${mx + 6} ${n(my + 31.4)}A24 32 0 0 0 ${mx + 6} ${n(my - 31.4)}Z" fill="#b8ad82" opacity="0.32"/>`,
+    `<g fill="#d8cfa6" opacity="0.7"><ellipse cx="${mx - 9}" cy="${n(my - 9)}" rx="9" ry="6.5"/><ellipse cx="${mx + 8}" cy="${n(my + 9)}" rx="7" ry="5"/></g>`,
+    `<g fill="none" stroke="#c9bf95" stroke-width="1.2"><circle cx="${mx - 14}" cy="${n(my + 11)}" r="3.4"/><circle cx="${mx + 10}" cy="${n(my - 14)}" r="2.6"/><circle cx="${mx - 2}" cy="${n(my + 20)}" r="2"/></g>`,
   )
-  // (The clouds and the twinkling stars move: they are drawn fresh, in `ambience`.)
-  const across = VIEW_W / (WORLD_W * S)
-  // Two ranges of hills, as the terminal draws them.
+  // (The clouds, twinkling stars and shooting stars move: they are drawn fresh, in `ambience`.)
+  // Three ranges of hills, hazier the further off, each lit along its ridge
+  // by the moon; mist lying in the valley before the nearest; pines on it.
+  const far = (x: number) => 3.4 + 1.1 * Math.sin(x * 0.15 + 0.4) + 0.4 * Math.sin(x * 0.5 + 1)
+  const mid = (x: number) => 2.2 + 0.9 * Math.sin(x * 0.23 + 1.3) + 0.5 * Math.sin(x * 0.61)
+  const near = (x: number) => 1.1 + 0.6 * Math.sin(x * 0.37 + 4) + 0.3 * Math.sin(x * 1.1 + 2)
   parts.push(
-    `<path d="${hillPath(x => 3.4 + 1.1 * Math.sin(x * 0.15 + 0.4) + 0.4 * Math.sin(x * 0.5 + 1))}" fill="#26386a" opacity="0.55"/>`,
-    `<path d="${hillPath(x => 2.2 + 0.9 * Math.sin(x * 0.23 + 1.3) + 0.5 * Math.sin(x * 0.61))}" fill="#223259" stroke="#34497e" stroke-width="2"/>`,
-    `<path d="${hillPath(x => 1.1 + 0.6 * Math.sin(x * 0.37 + 4) + 0.3 * Math.sin(x * 1.1 + 2))}" fill="#1a2747" stroke="#2a3b66" stroke-width="2"/>`,
+    `<path d="${hillPath(far)}" fill="url(#pds-far)" stroke="#6f86c9" stroke-width="1.5" stroke-opacity="0.45" opacity="0.8"/>`,
+    `<path d="${hillPath(mid)}" fill="url(#pds-mid)" stroke="#4e65a8" stroke-width="2" stroke-opacity="0.6"/>`,
+    `<rect y="${n(sy(1.9))}" width="${VIEW_W}" height="${n(sy(0.5) - sy(1.9))}" fill="url(#pds-mist)"/>`,
   )
-  // Ground: dirt with pebbles, a grass edge with tufts.
-  const top = sy(0)
-  parts.push(
-    `<rect x="0" y="${n(top)}" width="${VIEW_W}" height="${n(VIEW_H - top)}" fill="#4a3524"/>`,
-    `<rect x="0" y="${n(top + 24)}" width="${VIEW_W}" height="${n(Math.max(0, VIEW_H - top - 24))}" fill="#3f2d1f"/>`,
-  )
-  // Pebbles over both bands of dirt.
-  let pebbles = ''
-  for (let i = 0; i < Math.round(40 * across); i++) {
-    pebbles += `<ellipse cx="${n(hash(i + 404) * VIEW_W)}" cy="${n(top + 14 + hash(i + 505) * (VIEW_H - top - 18))}" rx="${n(2 + hash(i + 606) * 3)}" ry="${n(1.5 + hash(i + 707) * 1.5)}"/>`
+  let pines = ''
+  for (let x = view.x0 + 0.3; x < view.x1; x += 0.7 + hash(Math.round(x * 10) + 77) * 0.9) {
+    if (hash(Math.round(x * 10) + 99) < 0.3) continue
+    const h = (0.45 + hash(Math.round(x * 10) + 88) * 0.45) * S
+    const w = h * 0.56
+    const tx = sx(x)
+    const ty = sy(near(x)) + 3
+    pines += `M${px(tx)} ${px(ty - h)}l${n(w * 0.32)} ${n(h * 0.45)}h${n(-w * 0.13)}l${n(w * 0.31)} ${n(h * 0.55)}h${n(-w)}l${n(w * 0.31)} ${n(-h * 0.55)}h${n(-w * 0.13)}Z`
   }
-  parts.push(`<g fill="#33241a">${pebbles}</g>`, `<rect x="0" y="${n(top)}" width="${VIEW_W}" height="9" fill="#4c8a3f"/>`)
+  parts.push(`<path d="${pines}" fill="#121b37"/>`, `<path d="${hillPath(near)}" fill="url(#pds-near)" stroke="#3a5088" stroke-width="2" stroke-opacity="0.7"/>`)
+  // The ground: earth darkening with depth, pebbles in it; turf along its
+  // top, blades of grass and a few flowers standing in it.
+  parts.push(`<rect y="${n(top)}" width="${VIEW_W}" height="${n(VIEW_H - top)}" fill="url(#pds-soil)"/>`)
+  const pebbles: [number, number][] = []
+  for (let i = 0; i < Math.round(16 * across); i++) pebbles.push([Math.round(hash(i + 404) * VIEW_W), Math.round(top + 15 + hash(i + 505) * (VIEW_H - top - 18))])
+  parts.push(`<path d="${dots(pebbles)}" stroke="#2a1d14" stroke-width="4.4" stroke-linecap="round"/>`)
+  parts.push(`<rect y="${n(top)}" width="${VIEW_W}" height="10" fill="url(#pds-turf)"/>`, `<rect y="${n(top + 9)}" width="${VIEW_W}" height="3" fill="#1b3016" opacity="0.85"/>`)
   let tufts = ''
-  for (let x = 4; x < VIEW_W; x += 9 + hash(x) * 10) {
-    const h = 4 + hash(x + 1) * 6
-    tufts += `M${n(x)} ${n(top + 1)}l2 ${n(-h)}l2 ${n(h)}`
+  for (let x = 4; x < VIEW_W; x += 10 + hash(x) * 11) {
+    const h = Math.round(4 + hash(x + 1) * 7)
+    tufts += `M${Math.round(x)} ${n(top + 1.5)}l2-${h} 1 ${Math.round(h * 0.7)} 2-${Math.round(h * 0.75)} 1 ${h}z`
   }
-  parts.push(`<path d="${tufts}" fill="#5fa34f" stroke="#1d3318" stroke-width="1" stroke-linejoin="round"/>`,
-    `<rect x="0" y="${n(top + 2)}" width="${VIEW_W}" height="2" fill="#7cc46a"/>`,
-    `<rect x="0" y="${n(top + 8)}" width="${VIEW_W}" height="2.5" fill="#1d3318"/>`,
-  )
-  // The launcher's post and fork, outlined.
+  parts.push(`<path d="${tufts}" fill="url(#pds-blade)" stroke="#1d3318" stroke-width="0.8" stroke-linejoin="round"/>`)
+  const flowers: [number, number][][] = [[], [], []]
+  for (let i = 0; i < Math.round(12 * across); i++) {
+    const x = hash(i + 707) * VIEW_W
+    if (Math.abs(x - sx(LAUNCHER_X)) < 30) continue
+    flowers[i % 3]!.push([Math.round(x), Math.round(top - 3 - hash(i + 717) * 4)])
+  }
+  ;['#ffd166', '#ff9ccf', '#c6b2ff'].forEach((c, i) => parts.push(`<path d="${dots(flowers[i]!)}" stroke="${c}" stroke-width="3.4" stroke-linecap="round"/>`))
+  // The launcher's post and fork, in a shadow of its own: lit from the left,
+  // bound with leather at its tips and its middle.
   const fork = `M${n(sx(LAUNCHER_X))} ${n(sy(0))}V${n(sy(1.4))}M${n(sx(LAUNCHER_X))} ${n(sy(1.4))}L${n(sx(TIP_L.x))} ${n(sy(TIP_L.y))}M${n(sx(LAUNCHER_X + 0.05))} ${n(sy(1.4))}L${n(sx(TIP_R.x))} ${n(sy(TIP_R.y))}`
+  const lx = sx(LAUNCHER_X)
   parts.push(
+    `<ellipse cx="${n(lx + 4)}" cy="${n(top + 2)}" rx="26" ry="6" fill="url(#pd-shadow)"/>`,
     `<path d="${fork}" stroke="#1c1108" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`,
-    `<path d="${fork}" stroke="#8a5d33" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`,
-    `<path d="M${n(sx(LAUNCHER_X) - 2)} ${n(sy(0.1))}V${n(sy(1.3))}" stroke="#b07c4a" stroke-width="2" stroke-linecap="round"/>`,
-    `<path d="M${n(sx(LAUNCHER_X) - 6)} ${n(sy(0.55))}h12M${n(sx(LAUNCHER_X) - 6)} ${n(sy(0.55) + 5)}h12" stroke="#3b2414" stroke-width="2.5" stroke-linecap="round"/>`,
-    ...[TIP_L, TIP_R].map(t => `<circle cx="${n(sx(t.x))}" cy="${n(sy(t.y) + 6)}" r="4.5" fill="#5a3a1f" stroke="#1c1108" stroke-width="2"/>`),
+    `<path d="${fork}" stroke="url(#pds-post)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`,
+    `<path d="M${n(lx - 2)} ${n(sy(0.1))}V${n(sy(1.3))}M${n(sx(TIP_L.x) + 1.5)} ${n(sy(TIP_L.y) + 4)}L${n(lx - 1)} ${n(sy(1.4) - 2)}" stroke="#e0ad78" stroke-width="2" stroke-linecap="round" opacity="0.8"/>`,
+    `<path d="M${n(lx - 6)} ${n(sy(0.55))}h12M${n(lx - 6)} ${n(sy(0.55) + 5)}h12" stroke="#3b2414" stroke-width="3" stroke-linecap="round"/>`,
+    ...[TIP_L, TIP_R].map(
+      t =>
+        `<circle cx="${n(sx(t.x))}" cy="${n(sy(t.y) + 6)}" r="5" fill="#5a3a1f" stroke="#1c1108" stroke-width="2"/><circle cx="${n(sx(t.x) - 1.4)}" cy="${n(sy(t.y) + 4.6)}" r="1.6" fill="#a8774a"/>`,
+    ),
   )
-  scenery = parts.join('')
+  // Darker toward the corners, as a lens sees a night.
+  parts.push(`<rect width="${VIEW_W}" height="${VIEW_H}" fill="url(#pds-vignette)"/>`)
+  scenery = withPaints(parts.join(''))
 
   return scenery
 }
@@ -353,7 +518,7 @@ function spotIn(seed: number, w: number, h: number, pad: number): [number, numbe
 
 /** Dots, as one path: round-capped steps of next to nothing. */
 function dots(pts: [number, number][]): string {
-  return pts.map(([x, y]) => `M${n(x)} ${n(y)}h0.01`).join('')
+  return pts.map(([x, y]) => `M${n(x)} ${n(y)}h.01`).join('')
 }
 
 function stroke(d: string, color: string, width: number, extra = ''): string {
@@ -526,35 +691,46 @@ function atWork(b: Body): string {
   return `${l.turned}</g>${l.near ? `<g transform="translate(${n(sx(b.x))} ${n(sy(b.y))})">${l.near}</g>` : ''}`
 }
 
-/** A block in its own frame (pixels, y down), with `marks` (its damage) drawn over it. */
+/**
+ * A block in its own frame (pixels, y down), with `marks` (its damage) drawn
+ * over it: its material's paint, lit from the upper left, the grain or
+ * courses or rivets of it, and its edges caught by the light, lit along its
+ * top and left and shaded along its foot and right.
+ */
 function blockLook(b: Body, marks: string): string {
   const w = b.hw * 2 * S
   const h = b.hh * 2 * S
   const x0 = -w / 2
   const y0 = -h / 2
-  const rect = (fill: string, edge: string, extra = '') =>
-    `<rect x="${n(x0)}" y="${n(y0)}" width="${n(w)}" height="${n(h)}" rx="3" fill="${fill}" stroke="${edge}" stroke-width="2.6"${extra}/>`
-  const shine = (opacity: number, tall = 4) =>
-    `<rect x="${n(x0 + 2)}" y="${n(y0 + 2)}" width="${n(w - 4)}" height="${n(Math.min(tall, h * 0.2))}" rx="1.5" fill="#ffffff" opacity="${opacity}"/>`
+  const rect = (fill: string, edge: string) =>
+    `<rect x="${n(x0)}" y="${n(y0)}" width="${n(w)}" height="${n(h)}" rx="3" fill="${fill}" stroke="${edge}" stroke-width="2.6"/>`
+  const bevel = (paint = 'pd-bevel') =>
+    w > 7 && h > 7 ? `<rect x="${n(x0 + 2.1)}" y="${n(y0 + 2.1)}" width="${n(w - 4.2)}" height="${n(h - 4.2)}" rx="1.5" fill="none" stroke="url(#${paint})" stroke-width="1.7"/>` : ''
+  const long = w >= h
   let body = ''
   if (b.mat === 'wood') {
-    const m = MATERIALS.wood
-    body += rect(hexColor(m.color), '#3a2412')
-    // Grain along the long side, and a knot on big pieces.
+    body += rect('url(#pd-wood)', '#3a2412')
+    // Grain along the long side, a knot on big pieces, and a pair of nails at each end of a long one.
     let grain = ''
-    const long = w > h
     for (const t of [-0.28, 0.06, 0.3]) {
       grain += long
         ? `M${n(x0 + 4)} ${n(h * t)}Q${n(0)} ${n(h * t + 2)} ${n(-x0 - 4)} ${n(h * t - 1)}`
         : `M${n(w * t)} ${n(y0 + 4)}Q${n(w * t + 2)} ${n(0)} ${n(w * t - 1)} ${n(-y0 - 4)}`
     }
-    body += `<path d="${grain}" stroke="${hexColor(shade(m.color, 0.78))}" stroke-width="1.3" fill="none" opacity="0.8"/>`
-    if (w * h > 900) body += `<ellipse cx="${n(w * 0.18)}" cy="${n(h * 0.12)}" rx="3" ry="2" fill="none" stroke="${hexColor(m.edge)}" stroke-width="1.2"/>`
-    body += shine(0.12)
+    body += `<path d="${grain}" stroke="#7a4d24" stroke-width="1.3" fill="none" opacity="0.6"/>`
+    if (w * h > 900) body += `<ellipse cx="${n(w * 0.18)}" cy="${n(h * 0.12)}" rx="3.2" ry="2.1" fill="#8a5a2c" stroke="#5c3a1c" stroke-width="1.2"/>`
+    if (Math.max(w, h) > 70 && Math.min(w, h) > 9) {
+      const e = Math.max(w, h) / 2 - 6
+      const s = Math.min(w, h) * 0.22
+      const nails: [number, number][] = long
+        ? [[-e, -s], [-e, s], [e, -s], [e, s]]
+        : [[-s, -e], [s, -e], [-s, e], [s, e]]
+      body += `<path d="${dots(nails)}" stroke="#3b2a1a" stroke-width="2.6" stroke-linecap="round"/><path d="${dots(nails.map(([x, y]) => [x - 0.4, y - 0.4]))}" stroke="#d9b48a" stroke-width="0.9" stroke-linecap="round"/>`
+    }
+    body += bevel()
   } else if (b.mat === 'stone') {
-    const m = MATERIALS.stone
-    body += rect(hexColor(m.color), '#2c3036')
-    // Mortar: courses and staggered joints.
+    body += rect('url(#pd-stone)', '#2c3036')
+    // Mortar: courses and staggered joints, each stone's foot lit just under its line.
     let mortar = ''
     const course = 18
     const rows = Math.max(1, Math.round(h / course))
@@ -564,33 +740,29 @@ function blockLook(b: Body, marks: string): string {
       const yb = y0 + ((r + 1) * h) / rows
       for (let x = x0 + (r % 2 ? 14 : 26); x < -x0 - 6; x += 28) mortar += `M${n(x)} ${n(ya + 1)}V${n(yb - 1)}`
     }
-    body += `<path d="${mortar}" stroke="#6c727b" stroke-width="1.4" fill="none"/>`
-    body += shine(0.16, 5)
+    if (mortar) body += `<path d="${mortar}" stroke="#d7dbe2" stroke-width="1" fill="none" opacity="0.45" transform="translate(1 1.3)"/><path d="${mortar}" stroke="#555b64" stroke-width="1.5" fill="none"/>`
+    body += bevel()
   } else if (b.mat === 'concrete') {
-    const m = MATERIALS.concrete
-    body += rect(hexColor(m.color), '#4a463f')
+    body += rect('url(#pd-concrete)', '#4a463f')
     // Cast in one piece: grit through it, and the holes its form was tied with on big pieces.
     const dark: [number, number][] = []
     const light: [number, number][] = []
     const count = Math.min(14, Math.max(4, Math.round((w * h) / 140)))
     for (let i = 0; i < count; i++) (i % 3 ? dark : light).push(spotIn(b.id * 31 + i * 2, w, h, 4))
-    body += `<path d="${dots(dark)}" stroke="#827c71" stroke-width="2" stroke-linecap="round"/><path d="${dots(light)}" stroke="#d9d4c9" stroke-width="1.6" stroke-linecap="round"/>`
+    body += `<path d="${dots(dark)}" stroke="#827c71" stroke-width="2" stroke-linecap="round"/><path d="${dots(light)}" stroke="#e2ddd2" stroke-width="1.6" stroke-linecap="round"/>`
     if (w * h > 1100) {
-      const ties: [number, number][] = w >= h ? [[-w * 0.28, 0], [w * 0.28, 0]] : [[0, -h * 0.28], [0, h * 0.28]]
-      body += `<path d="${dots(ties)}" stroke="#57524a" stroke-width="3.2" stroke-linecap="round"/>`
+      const ties: [number, number][] = long ? [[-w * 0.28, 0], [w * 0.28, 0]] : [[0, -h * 0.28], [0, h * 0.28]]
+      body += `<path d="${dots(ties)}" stroke="#57524a" stroke-width="3.2" stroke-linecap="round"/><path d="${dots(ties.map(([x, y]) => [x + 0.5, y + 0.7]))}" stroke="#e8e3d8" stroke-width="1" stroke-linecap="round" opacity="0.6"/>`
     }
-    body += shine(0.14)
+    body += bevel()
   } else if (b.mat === 'metal') {
-    const m = MATERIALS.metal
-    body += rect(hexColor(m.color), '#232b35')
-    // Brushed along its length, a sheen across, a seam on long plates, a rivet at each corner.
-    const long = w >= h
+    body += rect('url(#pd-metal)', '#232b35')
+    // Brushed along its length, a seam on long plates, a rivet at each corner, lit on its upper left.
     let brush = ''
     for (const t of [-0.3, -0.1, 0.12, 0.32]) brush += long ? `M${n(x0 + 3)} ${n(h * t)}H${n(-x0 - 3)}` : `M${n(w * t)} ${n(y0 + 3)}V${n(-y0 - 3)}`
-    body += `<path d="${brush}" stroke="#c3d0de" stroke-width="0.8" opacity="0.35"/>`
+    body += `<path d="${brush}" stroke="#dfe8f2" stroke-width="0.8" opacity="0.22"/>`
     const k = Math.min(w, h)
-    body += `<path d="M${n(x0 + k * 0.3)} ${n(-y0 - 2)}L${n(x0 + k * 0.8)} ${n(y0 + 2)}" stroke="#ffffff" stroke-width="${n(Math.max(2, k * 0.14))}" stroke-linecap="round" opacity="0.16"/>`
-    if (long && w > 80) body += `<path d="M0 ${n(y0 + 2)}V${n(-y0 - 2)}" stroke="#3d4a58" stroke-width="1.2"/>`
+    if (long && w > 80) body += `<path d="M0 ${n(y0 + 2)}V${n(-y0 - 2)}" stroke="#3d4a58" stroke-width="1.2"/><path d="M1.2 ${n(y0 + 2)}V${n(-y0 - 2)}" stroke="#e6eef7" stroke-width="0.7" opacity="0.5"/>`
     const inset = Math.max(3, Math.min(5, k * 0.25))
     const corners: [number, number][] = [
       [x0 + inset, y0 + inset],
@@ -598,19 +770,16 @@ function blockLook(b: Body, marks: string): string {
       [x0 + inset, -y0 - inset],
       [-x0 - inset, -y0 - inset],
     ]
-    body += `<path d="${dots(corners)}" stroke="#2a333e" stroke-width="3.4" stroke-linecap="round"/><path d="${dots(corners.map(([x, y]) => [x - 0.6, y - 0.6]))}" stroke="#e6eef7" stroke-width="1.1" stroke-linecap="round"/>`
-    body += shine(0.18, 3)
+    body += `<path d="${dots(corners)}" stroke="#2a333e" stroke-width="3.4" stroke-linecap="round"/><path d="${dots(corners.map(([x, y]) => [x - 0.6, y - 0.6]))}" stroke="#f4f8fc" stroke-width="1.2" stroke-linecap="round"/>`
+    body += bevel('pd-sheen')
   } else {
-    const m = MATERIALS.glass
-    body += rect(hexColor(m.color), '#1f5a78', ' fill-opacity="0.42"')
+    body += rect('url(#pd-glass)', '#1f5a78')
     body += `<rect x="${n(x0 + 2.5)}" y="${n(y0 + 2.5)}" width="${n(w - 5)}" height="${n(h - 5)}" rx="1.5" fill="none" stroke="#e4f8ff" stroke-width="1.2" opacity="0.7"/>`
-    // Two streaks of shine.
+    // Two streaks of shine, and a glint at its corner.
     const k = Math.min(w, h)
     body += `<path d="M${n(x0 + k * 0.25)} ${n(-y0 - 3)}L${n(x0 + k * 0.75)} ${n(y0 + 3)}M${n(x0 + k * 0.55)} ${n(-y0 - 3)}L${n(x0 + k * 0.85)} ${n(y0 + k * 0.5)}" stroke="#ffffff" stroke-width="2" stroke-linecap="round" opacity="0.55"/>`
+    body += `<path d="M${n(x0 + 4.5)} ${n(y0 + 4.5)}h.01" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>`
   }
-
-  // A shaded underside, for weight.
-  if (b.mat !== 'glass') body += `<rect x="${n(x0 + 1.5)}" y="${n(-y0 - Math.min(4, h * 0.18) - 1.5)}" width="${n(w - 3)}" height="${n(Math.min(4, h * 0.18))}" rx="1" fill="#000000" opacity="0.18"/>`
 
   return body + marks
 }
@@ -619,18 +788,30 @@ function drawBug(b: Body, look: { x: number; y: number } | null): string {
   return `<g transform="${place(b.x, b.y, b.a)}">${bugLook(b, look)}${atWork(b)}`
 }
 
-/** A round purple beetle in its own frame, its eyes on `look` (a world point). */
-/** Everything of a bug but where it looks, defined once a picture for every bug to use. */
+/** The soft shadow at a bug's feet, round its center (pixels): it stands on whatever it stands on. */
+const BUG_SHADOW = '<ellipse cy="15.5" rx="17" ry="4.2" fill="url(#pd-shadow)"/>'
+
+function bugShadow(b: Body): string {
+  return `<g transform="translate(${n(sx(b.x))} ${n(sy(b.y))})">${BUG_SHADOW}</g>`
+}
+
+/**
+ * Everything of a bug but where it looks, defined once a picture for every
+ * bug to use: a round purple beetle, its shell lit from the upper left and
+ * glossy, its antennae glowing at their tips, blushing under big eyes.
+ */
 const BUG_DEF =
   `<g id="pd-bug">` +
   `<path d="${[-11, -3, 6].map(x => `M${x} 9l-3 7M${x + 6} 9l3 7`).join('')}" stroke="#2e1236" stroke-width="2.8" stroke-linecap="round"/>` +
   `<path d="M-6 -12Q-10 -21 -15 -20M6 -12Q10 -21 15 -20" stroke="#4a1f55" stroke-width="2" fill="none" stroke-linecap="round"/>` +
-  `<circle cx="-15" cy="-20" r="2.6" fill="#ffd166" stroke="#2e1236" stroke-width="1.2"/><circle cx="15" cy="-20" r="2.6" fill="#ffd166" stroke="#2e1236" stroke-width="1.2"/>` +
-  `<ellipse cx="0" cy="1" rx="17.5" ry="14" fill="${hexColor(BUG.color)}" stroke="#2e1236" stroke-width="2.8"/>` +
-  `<path d="M-12 7Q0 13 12 7" stroke="${hexColor(BUG.edge)}" stroke-width="1.6" fill="none"/>` +
-  `<circle cx="-9" cy="6" r="2.4" fill="#9a3fb0"/><circle cx="10" cy="5" r="2" fill="#9a3fb0"/><circle cx="1" cy="9" r="1.6" fill="#9a3fb0"/>` +
-  `<ellipse cx="-7" cy="-8" rx="6" ry="3" fill="#ffffff" opacity="0.25"/>` +
-  `<circle cx="-6" cy="-4" r="5.4" fill="#ffffff" stroke="#2e1236" stroke-width="1.6"/><circle cx="6" cy="-4" r="5.4" fill="#ffffff" stroke="#2e1236" stroke-width="1.6"/></g>`
+  `<g fill="url(#pg-ffd166)"><circle cx="-15" cy="-20" r="7"/><circle cx="15" cy="-20" r="7"/></g>` +
+  `<g fill="#ffe08a" stroke="#2e1236" stroke-width="1.2"><circle cx="-15" cy="-20" r="2.6"/><circle cx="15" cy="-20" r="2.6"/></g>` +
+  `<ellipse cx="0" cy="1" rx="17.5" ry="14" fill="url(#pd-shell)" stroke="#2e1236" stroke-width="2.8"/>` +
+  `<path d="M-12 7Q0 13 12 7" stroke="#6d2382" stroke-width="1.6" fill="none"/>` +
+  `<g fill="#86289f" opacity="0.75"><circle cx="-9" cy="7" r="2.4"/><circle cx="10" cy="6" r="2"/><circle cx="1" cy="10" r="1.6"/></g>` +
+  `<g fill="#ff8fd8" opacity="0.45"><ellipse cx="-12.5" cy="2.6" rx="3" ry="1.7"/><ellipse cx="12.5" cy="2.6" rx="3" ry="1.7"/></g>` +
+  `<ellipse cx="-10" cy="-8" rx="4.6" ry="2.2" fill="#ffffff" opacity="0.4" transform="rotate(-35 -10 -8)"/><circle cx="-14" cy="-3" r="1.2" fill="#ffffff" opacity="0.7"/>` +
+  `<g fill="url(#pd-eye)" stroke="#2e1236" stroke-width="1.6"><circle cx="-6" cy="-4" r="5.4"/><circle cx="6" cy="-4" r="5.4"/></g></g>`
 
 /** The bug drawing's definition, for a picture with bugs in it. */
 function bugDefs(any: boolean): string {
@@ -650,7 +831,9 @@ function bugLook(b: Body, look: { x: number; y: number } | null): string {
     ex = (c * dx + s * dy) / d
     ey = -(-s * dx + c * dy) / d
   }
+  // Each pupil with the moon caught in it.
   const pupil = (x: number) => `<circle cx="${n(x + ex * 2.3)}" cy="${n(-4 + ey * 2.3)}" r="2.6"/>`
+  const glint = (x: number) => `<circle cx="${n(x + ex * 2.3 - 0.9)}" cy="${n(-5 + ey * 2.3)}" r="0.9"/>`
   // Alive: a slow breath, and a blink every few seconds, each bug at its own pace.
   // Periods in tenths, the same written as reckoned with, so frames agree on where each loop is.
   const breath = tenths(1.5 + hash(b.id * 7 + 1) * 0.7)
@@ -658,10 +841,10 @@ function bugLook(b: Body, look: { x: number; y: number } | null): string {
 
   return (
     `<g><animateTransform attributeName="transform" type="scale" values="1 1;1.04 0.96;1 1" dur="${n(breath)}s" begin="${loop(breath, b.id * 0.37)}" repeatCount="indefinite"/>` +
-    `<use href="#pd-bug"/><g fill="#1b0f22">${pupil(-6)}${pupil(6)}</g>` +
+    `<use href="#pd-bug"/><g fill="#1b0f22">${pupil(-6)}${pupil(6)}</g><g fill="#ffffff">${glint(-6)}${glint(6)}</g>` +
     `<g transform="translate(0 -4)"><g transform="scale(1 0)">` +
     `<animateTransform attributeName="transform" type="scale" values="1 0;1 0;1 1;1 0" keyTimes="0;0.9;0.95;1" dur="${n(blink)}s" begin="${loop(blink, b.id * 1.3)}" repeatCount="indefinite"/>` +
-    `<g fill="${hexColor(BUG.color)}" stroke="#2e1236" stroke-width="1.6"><ellipse cx="-6" cy="0" rx="6.3" ry="6.3"/><ellipse cx="6" cy="0" rx="6.3" ry="6.3"/></g></g></g></g>`
+    `<g fill="#c45fdc" stroke="#2e1236" stroke-width="1.6"><ellipse cx="-6" cy="0" rx="6.3" ry="6.3"/><ellipse cx="6" cy="0" rx="6.3" ry="6.3"/></g></g></g></g>`
   )
 }
 
@@ -696,9 +879,8 @@ function shotLook(spec: ShotSpec | null, info: ShapeInfo, color: number, scale: 
 
     return `<g transform="translate(${n(info.artX * S)} ${n(-info.artY * S)}) scale(${Math.round(k * 1000) / 1000}) translate(${n(-W / 2)} ${n(-H / 2)})">${spec.art}</g>`
   }
-  const fill = hexColor(color)
   const edge = hexColor(shade(color, 0.35))
-  let look = outline(info, fill, edge)
+  let look = outline(info, tinted('l', color), edge)
   if (info.shape === 'circle') {
     const r = info.rad * S
     look += `<path d="M${n(-r * 0.8)} 0H${n(r * 0.8)}" stroke="${edge}" stroke-width="2" opacity="0.6"/>`
@@ -719,24 +901,44 @@ function shotLook(spec: ShotSpec | null, info: ShapeInfo, color: number, scale: 
 /** The letters of `elementCode`, in the order they are drawn, bottom up. */
 const ELEMENTS = 'chwiafzx'
 
+/**
+ * A tongue of fire: its light round it, breathing over `glow` seconds; its
+ * three layers, red tips to a white-hot root, flickering through `flicker`'s
+ * scales. Two of them, so fires side by side differ.
+ */
+function flame(id: string, glow: [string, number], flicker: [string, number], outer: string, middle: string, inner: string): string {
+  return (
+    `<g id="${id}"><ellipse cx="0" cy="-36" rx="72" ry="68" fill="url(#pg-ff8a3d)" opacity="0.8"><animate attributeName="opacity" values="${glow[0]}" dur="${glow[1]}s" repeatCount="indefinite"/></ellipse>` +
+    `<g><animateTransform attributeName="transform" type="scale" values="${flicker[0]}" dur="${flicker[1]}s" repeatCount="indefinite"/>` +
+    `<path d="${outer}" fill="url(#pd-flame)"/><path d="${middle}" fill="url(#pd-core)"/><path d="${inner}" fill="#fff6c8"/></g></g>`
+  )
+}
+
 const ELEMENT_DEFS: Record<string, string> = {
   f:
-    `<g id="pd-fire2"><ellipse cx="0" cy="-38" rx="58" ry="56" fill="#ff8a3d" opacity="0.16"><animate attributeName="opacity" values="0.24;0.1;0.24" dur="0.43s" repeatCount="indefinite"/></ellipse>` +
-    `<g><animateTransform attributeName="transform" type="scale" values="1 0.92;0.93 1.12;1.05 0.88;1 0.92" dur="0.37s" repeatCount="indefinite"/>` +
-    `<path d="M-46 0Q-50 -46 -28 -58Q-28 -40 -12 -36Q-16 -64 6 -96Q14 -66 30 -60Q28 -74 42 -80Q54 -40 46 0Z" fill="#ff4d2e" opacity="0.9"/>` +
-    `<path d="M-30 0Q-32 -26 -16 -40Q-14 -26 -2 -22Q-2 -50 12 -66Q18 -42 28 -38Q36 -18 30 0Z" fill="#ff9f1c"/>` +
-    `<path d="M-14 0Q-16 -16 -2 -28Q4 -14 10 -32Q18 -16 14 0Z" fill="#ffe066"/></g></g>` +
-    `<g id="pd-fire"><ellipse cx="0" cy="-38" rx="62" ry="60" fill="#ff8a3d" opacity="0.18"><animate attributeName="opacity" values="0.12;0.28;0.12" dur="0.5s" repeatCount="indefinite"/></ellipse>` +
-    `<g><animateTransform attributeName="transform" type="scale" values="1 1;1.06 0.84;0.94 1.1;1 1" dur="0.42s" repeatCount="indefinite"/>` +
-    `<path d="M-48 0Q-54 -40 -22 -62Q-26 -38 -8 -30Q-10 -70 12 -100Q16 -60 34 -52Q30 -66 40 -72Q58 -36 48 0Z" fill="#ff4d2e" opacity="0.9"/>` +
-    `<path d="M-32 0Q-34 -30 -14 -46Q-14 -28 -2 -24Q0 -54 14 -72Q16 -40 30 -34Q38 -18 32 0Z" fill="#ff9f1c"/>` +
-    `<path d="M-16 0Q-18 -18 -4 -30Q2 -16 8 -36Q20 -18 16 0Z" fill="#ffe066"/></g></g>`,
-  x: `<g id="pd-fuse"><circle r="50" fill="#ff2a2a" opacity="0"><animate attributeName="opacity" values="0;0.5;0" dur="0.24s" repeatCount="indefinite"/></circle></g>`,
+    flame(
+      'pd-fire2',
+      ['0.95;0.6;0.95', 0.43],
+      ['1 0.92;0.93 1.12;1.05 0.88;1 0.92', 0.37],
+      'M-46 0Q-50 -46 -28 -58Q-28 -40 -12 -36Q-16 -64 6 -96Q14 -66 30 -60Q28 -74 42 -80Q54 -40 46 0Z',
+      'M-30 0Q-32 -26 -16 -40Q-14 -26 -2 -22Q-2 -50 12 -66Q18 -42 28 -38Q36 -18 30 0Z',
+      'M-14 0Q-16 -16 -2 -28Q4 -14 10 -32Q18 -16 14 0Z',
+    ) +
+    flame(
+      'pd-fire',
+      ['0.6;1;0.6', 0.5],
+      ['1 1;1.06 0.84;0.94 1.1;1 1', 0.42],
+      'M-48 0Q-54 -40 -22 -62Q-26 -38 -8 -30Q-10 -70 12 -100Q16 -60 34 -52Q30 -66 40 -72Q58 -36 48 0Z',
+      'M-32 0Q-34 -30 -14 -46Q-14 -28 -2 -24Q0 -54 14 -72Q16 -40 30 -34Q38 -18 32 0Z',
+      'M-16 0Q-18 -18 -4 -30Q2 -16 8 -36Q20 -18 16 0Z',
+    ),
+  x: `<g id="pd-fuse"><circle r="56" fill="url(#pg-ff2a2a)" opacity="0"><animate attributeName="opacity" values="0;1;0" dur="0.24s" repeatCount="indefinite"/></circle></g>`,
   z:
     `<g id="pd-zap"><animate attributeName="opacity" values="1;0.15;0.9;0" calcMode="discrete" dur="0.18s" repeatCount="indefinite"/>` +
-    `<circle r="50" fill="#fff36b" opacity="0.18"/>` +
-    `<polyline points="-50,-6 -30,12 -12,-14 6,10 24,-12 50,4" fill="none" stroke="#fff36b" stroke-width="6" stroke-linejoin="round"/>` +
-    `<polyline points="-20,-48 -6,-20 -22,0 4,22 -8,48" fill="none" stroke="#9ff6ff" stroke-width="4" stroke-linejoin="round"/></g>`,
+    `<circle r="62" fill="url(#pg-fff36b)"/>` +
+    `<g fill="none" stroke-linejoin="round" stroke-linecap="round"><polyline points="-50,-6 -30,12 -12,-14 6,10 24,-12 50,4" stroke="#fff36b" stroke-width="7"/>` +
+    `<polyline points="-20,-48 -6,-20 -22,0 4,22 -8,48" stroke="#9ff6ff" stroke-width="5"/>` +
+    `<path d="M-50 -6L-30 12L-12 -14L6 10L24 -12L50 4M-20 -48L-6 -20L-22 0L4 22L-8 48" stroke="#ffffff" stroke-width="2"/></g></g>`,
   a: `<g id="pd-bubbles">${[
     [-25, 7, 0.8, 0],
     [5, 5, 0.65, -0.3],
@@ -744,14 +946,14 @@ const ELEMENT_DEFS: Record<string, string> = {
   ]
     .map(
       ([x, r, dur, begin]) =>
-        `<circle cx="${x}" cy="0" r="${r}" fill="#b6ff6a" opacity="0"><animate attributeName="cy" values="0;-60" dur="${dur}s" begin="${begin}s" repeatCount="indefinite"/>` +
-        `<animate attributeName="opacity" values="0.9;0" dur="${dur}s" begin="${begin}s" repeatCount="indefinite"/></circle>`,
+        `<circle cx="${x}" cy="0" r="${r! * 1.6}" fill="url(#pk-b6ff6a)" opacity="0"><animate attributeName="cy" values="0;-60" dur="${dur}s" begin="${begin}s" repeatCount="indefinite"/>` +
+        `<animate attributeName="opacity" values="1;0" dur="${dur}s" begin="${begin}s" repeatCount="indefinite"/></circle>`,
     )
     .join('')}</g>`,
   w:
-    `<g id="pd-drip"><path d="M0 -6Q5 2 0 6Q-5 2 0 -6Z" fill="#7fd4ff" opacity="0">` +
+    `<g id="pd-drip"><g opacity="0"><path d="M0 -6Q5 2 0 6Q-5 2 0 -6Z" fill="#7fd4ff"/><circle cx="-1.2" cy="1" r="1.1" fill="#ffffff" opacity="0.8"/>` +
     `<animateTransform attributeName="transform" type="translate" values="0 0;0 26" dur="0.7s" repeatCount="indefinite"/>` +
-    `<animate attributeName="opacity" values="1;0" dur="0.7s" repeatCount="indefinite"/></path></g>`,
+    `<animate attributeName="opacity" values="1;0" dur="0.7s" repeatCount="indefinite"/></g></g>`,
 }
 
 /** The looks the letters in `codes` need, defined once. */
@@ -794,8 +996,7 @@ function elementLayer(b: Body, letter: string): { turned: string; near: string }
       // Glowing hot: red at its edges, orange to yellow at its heart, breathing; its outline lit.
       return {
         turned:
-          `<g>${overShape(b, '#ff3300', 0.5)}<g transform="scale(0.8)">${overShape(b, '#ff7a1a', 0.25)}</g><g transform="scale(0.55)">${overShape(b, '#ffb020', 0.25)}</g><g transform="scale(0.3)">${overShape(b, '#ffe066', 0.3)}</g>` +
-          `<animate attributeName="opacity" values="0.6;1;0.6" dur="0.9s" repeatCount="indefinite"/></g>` +
+          `<g>${overShape(b, 'url(#pd-heat)', 0.9)}<animate attributeName="opacity" values="0.6;1;0.6" dur="0.9s" repeatCount="indefinite"/></g>` +
           overShape(b, 'none', 0.85, '#ffb03a'),
         near: '',
       }
@@ -811,7 +1012,7 @@ function elementLayer(b: Body, letter: string): { turned: string; near: string }
     case 'i':
       return {
         turned:
-          overShape(b, '#e6f8ff', 0.6, '#ffffff') +
+          overShape(b, 'url(#pd-ice)', 0.9, '#ffffff') +
           `<path d="M-6 0H6M0 -6V6M-4 -4L4 4M-4 4L4 -4" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round"/>`,
         near: '',
       }
@@ -855,6 +1056,9 @@ function spans(states: string[], letter: string): { from: number; until: number 
   return out
 }
 
+/** How much wider than the shot the light of an ability ready to fire reaches: soft, it fades out to its edge. */
+const READY = 1.5
+
 /** A power's flash: a fifth of a second, a little wider than the shot. */
 const FLASH_TICKS = 5
 function flashRadius(b: Body): number {
@@ -892,8 +1096,8 @@ function drawShot(g: Game, b: Body, art: boolean, ready: boolean): string {
   }
   // Ready to fire its ability: a beat of light around it.
   if (ready) {
-    const glow = 0.25 + 0.2 * Math.sin(g.frame * 0.6)
-    out += `<circle cx="${n(sx(b.x))}" cy="${n(sy(b.y))}" r="${n((b.r + 0.25) * S)}" fill="#ffd166" opacity="${n(glow)}"/>`
+    const glow = 0.6 + 0.35 * Math.sin(g.frame * 0.6)
+    out += `<circle cx="${n(sx(b.x))}" cy="${n(sy(b.y))}" r="${n((b.r + 0.25) * S * READY)}" fill="url(#pg-ffd166)" opacity="${n(glow)}"/>`
   }
   out += `<g transform="${place(b.x, b.y, b.a)}">${shotLook(b.spec, b, b.color, b.scale, art && !b.shard)}${atWork(b)}`
 
@@ -938,6 +1142,7 @@ function celebration(e: number, words: string | null): string {
   const size = Math.min(30 * k, (VIEW_W - 40 * k) / (words.length * 0.56))
   const base = Math.max(sy(9.4), 34 * k + size * 1.4)
   const half = textWidth(words, size) / 2
+  out += `<ellipse cx="${n(VIEW_W / 2)}" cy="${n(base - size * 0.4)}" rx="${n(half + 90 * k)}" ry="${n(size * 1.7)}" fill="url(#pg-ffd166)" opacity="0.5"><animate attributeName="opacity" values="0.35;0.6;0.35" dur="1.6s" repeatCount="indefinite"/></ellipse>`
   ;[-1, 0, 1].forEach((side, i) => {
     const x = VIEW_W / 2 + side * (half + 26 * k)
     const y = side === 0 ? base - size * 1.45 : base - size * 0.36
@@ -952,7 +1157,8 @@ function celebration(e: number, words: string | null): string {
 }
 
 /** A stock round drawn around 0,0 in picture units, pointing along +x. */
-function stockLook(ammo: Ammo, c: string): string {
+function stockLook(ammo: Ammo, color: number): string {
+  const c = hexColor(color)
   switch (ammo) {
     case 'bullet':
       return `<path d="M-26 0H-4" stroke="${c}" stroke-width="3" stroke-linecap="round" opacity="0.5"/><rect x="-7" y="-3" width="15" height="6" rx="3" fill="${c}" stroke="#2b1d08" stroke-width="1.2"/>`
@@ -961,11 +1167,11 @@ function stockLook(ammo: Ammo, c: string): string {
     case 'water':
       return `<circle r="5.5" fill="${c}"/><circle cx="-1.8" cy="-1.8" r="1.7" fill="#ffffff" opacity="0.7"/>`
     case 'fire':
-      return `<circle r="11" fill="${c}" opacity="0.8"/><circle cx="1.5" cy="1" r="6" fill="#ffe066" opacity="0.9"/>`
+      return `<circle r="15" fill="${tinted('k', color)}"/>`
     case 'spike':
       return `<path d="M13 0L-13 -3L-10 0L-13 3Z" fill="${c}" stroke="#1b1b2b" stroke-width="1.2" stroke-linejoin="round"/>`
     case 'ball':
-      return `<circle r="8" fill="${c}" stroke="#1b1b2b" stroke-width="1.8"/><circle cx="-2.6" cy="-2.6" r="2.6" fill="#ffffff" opacity="0.45"/>`
+      return `<circle r="8" fill="${tinted('l', color)}" stroke="#1b1b2b" stroke-width="1.8"/><circle cx="-2.8" cy="-2.8" r="1.8" fill="#ffffff" opacity="0.7"/>`
     case 'note':
       return `<ellipse cx="-3" cy="5" rx="5" ry="3.6" transform="rotate(-20 -3 5)" fill="${c}" stroke="#1b1b2b" stroke-width="1"/><path d="M1.6 4V-11L9 -7" stroke="${c}" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`
     case 'star':
@@ -973,7 +1179,7 @@ function stockLook(ammo: Ammo, c: string): string {
     case 'bubble':
       return `<circle r="9" fill="${c}" fill-opacity="0.15" stroke="${c}" stroke-width="1.8"/><path d="M-5 -3A6 6 0 0 1 -1 -6.4" stroke="#ffffff" stroke-width="1.8" fill="none" stroke-linecap="round"/>`
     case 'gas':
-      return `<circle r="14" fill="${c}" opacity="0.3"/><circle cx="9" cy="-6" r="10" fill="${c}" opacity="0.28"/><circle cx="-9" cy="5" r="11" fill="${c}" opacity="0.28"/>`
+      return `<g fill="${tinted('s', color)}" opacity="0.55"><circle r="17"/><circle cx="10" cy="-7" r="13"/><circle cx="-10" cy="6" r="14"/></g>`
     case 'zap':
       return `<path d="${ZAG}" stroke="${c}" stroke-width="6" fill="none" stroke-linejoin="round" stroke-linecap="round" opacity="0.55"/><path d="${ZAG}" stroke="#ffffff" stroke-width="2.5" fill="none" stroke-linejoin="round" stroke-linecap="round"/>`
   }
@@ -1007,7 +1213,7 @@ function roundLook(r: Round, color: number, ids: RoundIds): string {
   const id = r.art ? ids.get(r.art) : undefined
   if (id) return `<use href="#${id}"/>`
   const c = hexColor(color)
-  if (r.look) return stockLook(r.look, c)
+  if (r.look) return stockLook(r.look, color)
   const z = roundZoom(r) * S
   const w = r.width * z
   const h = r.height * z
@@ -1053,19 +1259,23 @@ function aged(p: Particle): number {
   return Math.max(0, Math.min(1, 1 - p.life / p.max))
 }
 
+/** How much wider than its size a puff of smoke is drawn: soft, it fades out toward its edge. */
+const SOFT = 1.4
+/** How much wider a spark is drawn: a hot point in its own glow. */
+const GLOW = 2.3
+
 /** A particle around 0,0 as it looks `k` of the way through its life, `spun` degrees round. */
 function particleLook(p: Particle, k: number, spun: number): string {
-  const c = hexColor(p.color)
-  if (p.kind === 'smoke') return `<circle r="${n(p.size * S * 0.5 * (1 + 1.2 * k))}" fill="${c}" opacity="${n(0.38 * (1 - k))}"/>`
+  if (p.kind === 'smoke') return `<circle r="${n(p.size * S * 0.5 * SOFT * (1 + 1.2 * k))}" fill="${tinted('s', p.color)}" opacity="${n(0.5 * (1 - k))}"/>`
   if (p.kind === 'chunk') {
     const w = p.size * S
     const h = w * 0.6
 
-    return `<rect x="${n(-w / 2)}" y="${n(-h / 2)}" width="${n(w)}" height="${n(h)}" rx="1" fill="${c}" stroke="#1b1b2b" stroke-width="0.8" transform="rotate(${n(spun)})" opacity="${n(Math.min(1, (1 - k) * 4))}"/>`
+    return `<rect x="${n(-w / 2)}" y="${n(-h / 2)}" width="${n(w)}" height="${n(h)}" rx="1" fill="${hexColor(p.color)}" stroke="#1b1b2b" stroke-width="0.8" transform="rotate(${n(spun)})" opacity="${n(Math.min(1, (1 - k) * 4))}"/>`
   }
   const r = Math.max(1.1, p.size * S * 0.6 * (1 - 0.4 * k))
 
-  return `<circle r="${n(r)}" fill="${c}" opacity="${n(Math.min(1, (1 - k) * 2.2))}"/>`
+  return `<circle r="${n(r * GLOW)}" fill="${tinted('k', p.color)}" opacity="${n(Math.min(1, (1 - k) * 2.2))}"/>`
 }
 
 function drawParticle(p: Particle): string {
@@ -1074,15 +1284,14 @@ function drawParticle(p: Particle): string {
   return `<g transform="translate(${n(sx(p.x))} ${n(sy(p.y))})">${particleLook(p, aged(p), (-p.spin * age * 180) / Math.PI)}</g>`
 }
 
-/** Points won, its text drawn over a dark offset copy of itself so it reads on anything. */
+/** Points won, outlined dark so they read on anything. */
 function scoreText(text: string, color: number): string {
-  const t = esc(text)
-
-  return (
-    `<text x="1.5" y="1.5" text-anchor="middle" font-size="19" font-weight="800" fill="#1b1b2b">${t}</text>` +
-    `<text text-anchor="middle" font-size="19" font-weight="800" fill="${hexColor(color)}">${t}</text>`
-  )
+  return `<text text-anchor="middle" font-size="21" stroke="#1b1030" stroke-width="4.5" stroke-linejoin="round" paint-order="stroke" font-weight="800" fill="${hexColor(color)}">${esc(text)}</text>`
 }
+
+/** How far a blast's light reaches, and how much wider than its lobes its fireball is drawn (soft, it fades out at its edge). */
+const LIGHT = 2.4
+const BALL = 1.3
 
 /**
  * A fireball's lobes: five blobs round a bright core, each from its first
@@ -1102,9 +1311,11 @@ function drawEffectNow(fx: Effect): string {
   if (fx.kind === 'blast') {
     const R = fx.r * S
     const hold = k < 0.35 ? 0.9 - (0.2 * k) / 0.35 : (0.7 * (1 - k)) / 0.65
-    let out = `<g transform="translate(${cx} ${cy})" opacity="${n(hold)}">`
-    for (const [dx, dy, r0, r1] of LOBES) out += `<circle cx="${n(dx * R * (1 + k))}" cy="${n(dy * R * (1 + k))}" r="${n(R * (r0 + (r1 - r0) * k))}" fill="#ff6a2a"/>`
-    out += `<circle r="${n(R * (0.3 + 0.2 * k))}" fill="#ffb347"/><circle r="${n(R * (0.16 + 0.1 * k))}" fill="#fff1a8" opacity="${n(Math.max(0, 1 - k * 1.8))}"/></g>`
+    // Its light thrown wide round it, the fireball's lobes, and its white-hot heart.
+    let out = `<circle cx="${cx}" cy="${cy}" r="${n(R * LIGHT)}" fill="url(#pg-ff9a3a)" opacity="${n(Math.max(0, 1 - k * 1.4))}"/>`
+    out += `<g transform="translate(${cx} ${cy})" opacity="${n(hold)}">`
+    for (const [dx, dy, r0, r1] of LOBES) out += `<circle cx="${n(dx * R * (1 + k))}" cy="${n(dy * R * (1 + k))}" r="${n(R * (r0 + (r1 - r0) * k) * BALL)}" fill="url(#pd-fireball)"/>`
+    out += `<circle r="${n(R * (0.3 + 0.2 * k) * BALL)}" fill="url(#pd-fireball)"/><circle r="${n(R * (0.16 + 0.1 * k))}" fill="#fff1a8" opacity="${n(Math.max(0, 1 - k * 1.8))}"/></g>`
     if (fx.t < 0.14) out += `<circle cx="${cx}" cy="${cy}" r="${n(R * 0.45)}" fill="#ffffff" opacity="${n(0.9 * (1 - fx.t / 0.14))}"/>`
 
     return out
@@ -1147,7 +1358,10 @@ type Detail = { art: number; particles: boolean; arc: boolean; from: { x: number
 /** The band across an empty launcher, drawn once a view. */
 let emptyBand = ''
 function drawEmptyBand(): string {
-  emptyBand ||= `<path d="M${n(sx(TIP_L.x))} ${n(sy(TIP_L.y))}Q${n(sx(LAUNCHER_X))} ${n(sy(TIP_L.y - 0.25))} ${n(sx(TIP_R.x))} ${n(sy(TIP_R.y))}" stroke="#1c1108" stroke-width="7" fill="none" stroke-linecap="round"/><path d="M${n(sx(TIP_L.x))} ${n(sy(TIP_L.y))}Q${n(sx(LAUNCHER_X))} ${n(sy(TIP_L.y - 0.25))} ${n(sx(TIP_R.x))} ${n(sy(TIP_R.y))}" stroke="#e8b67a" stroke-width="4" fill="none" stroke-linecap="round"/>`
+  const d = `M${n(sx(TIP_L.x))} ${n(sy(TIP_L.y))}Q${n(sx(LAUNCHER_X))} ${n(sy(TIP_L.y - 0.25))} ${n(sx(TIP_R.x))} ${n(sy(TIP_R.y))}`
+  emptyBand ||=
+    `<path d="${d}" stroke="#1c1108" stroke-width="7" fill="none" stroke-linecap="round"/><path d="${d}" stroke="#e8b67a" stroke-width="4" fill="none" stroke-linecap="round"/>` +
+    `<path d="${d}" stroke="#ffe7c2" stroke-width="1.1" fill="none" stroke-linecap="round" opacity="0.55" transform="translate(0 -1)"/>`
 
   return emptyBand
 }
@@ -1178,9 +1392,10 @@ export function hudMarkup(g: Game): string {
 
   const y = n(23 * k)
   let x = 14 * k
-  let out = `<rect x="0" y="0" width="${VIEW_W}" height="${n(34 * k)}" fill="#070b1a" opacity="0.72"/><rect x="0" y="${n(34 * k)}" width="${VIEW_W}" height="${n(2 * k)}" fill="#ff8a3d" opacity="0.55"/>`
+  // A dark glass bar, ruled underneath in the game's fire; the name lit in it.
+  let out = `<rect x="0" y="0" width="${VIEW_W}" height="${n(34 * k)}" fill="url(#pd-bar)"/><rect x="0" y="${n(34 * k)}" width="${VIEW_W}" height="${n(2 * k)}" fill="url(#pd-rule)"/>`
   if (brand) {
-    out += `<text x="${n(x)}" y="${y}" font-size="${n(16 * k)}" font-weight="800" fill="#ff8a3d" letter-spacing="1">PROMPT &amp; DESTROY</text>`
+    out += `<text x="${n(x)}" y="${y}" font-size="${n(16 * k)}" font-weight="800" fill="url(#pd-brand)" letter-spacing="1">PROMPT &amp; DESTROY</text>`
     x += brandW
   }
   out += `<text x="${n(x)}" y="${y}" font-size="${n(15 * k)}" fill="#e6ecff">${esc(level)}</text>`
@@ -1190,8 +1405,8 @@ export function hudMarkup(g: Game): string {
     const cx = n(x + (50 + i * 15) * k)
     out +=
       i < g.shots
-        ? `<circle cx="${cx}" cy="${n(17 * k)}" r="${n(5.5 * k)}" fill="#ffd166" stroke="#7a4a00" stroke-width="${n(1.2 * k)}"/>`
-        : `<circle cx="${cx}" cy="${n(17 * k)}" r="${n(5 * k)}" fill="none" stroke="#ffd166" stroke-width="${n(1.5 * k)}" opacity="0.6"/>`
+        ? `<circle cx="${cx}" cy="${n(17 * k)}" r="${n(5.5 * k)}" fill="url(#pd-coin)" stroke="#7a4a00" stroke-width="${n(1.2 * k)}"/>`
+        : `<circle cx="${cx}" cy="${n(17 * k)}" r="${n(5 * k)}" fill="#ffd166" fill-opacity="0.08" stroke="#ffd166" stroke-width="${n(1.5 * k)}" stroke-opacity="0.45"/>`
   }
   x += shotsW
   out += `<text x="${n(x)}" y="${y}" font-size="${n(15 * k)}" fill="#e6ecff">Bugs <tspan fill="#d68ae6" font-weight="700">${bugs}</tspan></text>`
@@ -1215,7 +1430,10 @@ function frame(g: Game, detail: Detail): string {
     const to = `M${n(sx(tip.x))} ${n(sy(tip.y))}L${n(sx(pouch.x))} ${n(sy(pouch.y))}`
     const glide = from ? `<animate attributeName="d" from="M${n(sx(tip.x))} ${n(sy(tip.y))}L${n(sx(from.x))} ${n(sy(from.y))}" to="${to}" dur="${dur}" fill="freeze"/>` : ''
 
-    return `<path d="${to}" stroke="#1c1108" stroke-width="8" stroke-linecap="round">${glide}</path><path d="${to}" stroke="${color}" stroke-width="4.5" stroke-linecap="round">${glide}</path>`
+    return (
+      `<path d="${to}" stroke="#1c1108" stroke-width="8" stroke-linecap="round">${glide}</path><path d="${to}" stroke="${color}" stroke-width="4.5" stroke-linecap="round">${glide}</path>` +
+      `<path d="${to}" stroke="#ffe7c2" stroke-width="1.2" stroke-linecap="round" opacity="0.55" transform="translate(0 -1.2)">${glide}</path>`
+    )
   }
   if (!g.loaded) parts.push(drawEmptyBand())
   else parts.push(band(TIP_L, '#b98448'))
@@ -1226,11 +1444,13 @@ function frame(g: Game, detail: Detail): string {
   let artLeft = detail.art
   const ready = g.phase === 'flying' && !g.abilityUsed && g.activeAbility !== 'none'
   parts.push(elementDefs(g.bodies.map(elementCode)), bugDefs(g.bodies.some(b => b.kind === 'bug')))
-  parts.push(drawPath(g))
+  let shadows = ''
+  for (const b of g.bodies) if (b.kind === 'block' || b.kind === 'shot') shadows += groundShadow(b, b.x, b.y, b.a)
+  parts.push(shadows, drawPath(g))
   for (const b of g.bodies) {
     if (b.kind === 'ground') continue
     if (b.kind === 'block') parts.push(drawBlock(b))
-    else if (b.kind === 'bug') parts.push(g.phase === 'lost' ? hopping(b, drawBug(b, look)) : drawBug(b, look))
+    else if (b.kind === 'bug') parts.push(bugShadow(b), g.phase === 'lost' ? hopping(b, drawBug(b, look)) : drawBug(b, look))
     else {
       const art = artLeft > 0 && !!b.spec?.art
       if (art) artLeft--
@@ -1277,7 +1497,8 @@ function frame(g: Game, detail: Detail): string {
       reveal?.back ?? '',
       `<g${from ? ` transform="translate(${offset})"` : ''}>` +
         (from ? `<animateTransform attributeName="transform" type="translate" from="${offset}" to="0 0" dur="${dur}" fill="freeze"/>` : '') +
-        `<rect x="${n(sx(pouch.x) - 6)}" y="${n(sy(pouch.y) - 7)}" width="12" height="14" rx="3" fill="#5a3a1f" stroke="#1c1108" stroke-width="2"/>` +
+        `<rect x="${n(sx(pouch.x) - 6)}" y="${n(sy(pouch.y) - 7)}" width="12" height="14" rx="3" fill="url(#pd-leather)" stroke="#1c1108" stroke-width="2"/>` +
+        `<path d="M${n(sx(pouch.x) - 3)} ${n(sy(pouch.y) - 4.5)}v9M${n(sx(pouch.x) + 3)} ${n(sy(pouch.y) - 4.5)}v9" stroke="#d6a873" stroke-width="0.9" stroke-dasharray="1.6 1.4" opacity="0.8"/>` +
         `<g transform="${place(pouch.x, pouch.y, 0)}"><g>${reveal?.pop ?? ''}${shotLook(spec, info, color, 1, artLeft > 0)}</g></g></g>`,
       band(TIP_R, '#e8b67a'),
       reveal?.front ?? '',
@@ -1311,7 +1532,7 @@ function frame(g: Game, detail: Detail): string {
   if (g.phase === 'won' && g.endedAt >= 0) parts.push(celebration((g.frame - g.endedAt) * TICK_S, g.banner?.text ?? null))
   parts.push(hudMarkup(g), wordsMarkup(g, true))
 
-  return svgDoc(parts.join(''))
+  return svgDoc(withPaints(parts.join('')))
 }
 
 /** A whole document; `fill`ing its box, as one drawn in a frame of its own must. */
@@ -1352,7 +1573,7 @@ export function wordsMarkup(g: Game, pop = false): string {
     const size = Math.min(30 * k, (VIEW_W - 40 * k) / (g.banner.text.length * 0.56))
     // Over the level, where the world's own sky put it, under the bar along the top.
     const y = Math.max(sy(9.4), 34 * k + size * 1.4)
-    const text = `<text x="${n(VIEW_W / 2)}" y="${n(y)}" font-size="${n(size)}" font-weight="800" text-anchor="middle" fill="#ffd166" stroke="#0b1026" stroke-width="${n(size / 5)}" stroke-linejoin="round" paint-order="stroke">${esc(g.banner.text)}</text>`
+    const text = `<text x="${n(VIEW_W / 2)}" y="${n(y)}" font-size="${n(size)}" font-weight="800" text-anchor="middle" fill="url(#pd-gold)" stroke="#0b1026" stroke-width="${n(size / 4.5)}" stroke-linejoin="round" paint-order="stroke">${esc(g.banner.text)}</text>`
     const up = (g.frame - g.banner.from) * TICK_S
     out += pop && up < BANNER_POP_S ? popIn(text, `${-Math.round(up * 1000) / 1000}s`) : text
   }
@@ -1361,7 +1582,7 @@ export function wordsMarkup(g: Game, pop = false): string {
     const size = Math.min(14 * k, (VIEW_W - 28 * k) / (st.text.length * 0.56))
     const bar = Math.max(26 * k, size * 1.9)
     out +=
-      `<rect x="0" y="${n(VIEW_H - bar)}" width="${VIEW_W}" height="${n(bar)}" fill="#070b1a" opacity="0.62"/><rect x="0" y="${n(VIEW_H - bar)}" width="${VIEW_W}" height="${n(1.5 * k)}" fill="#e6ecff" opacity="0.12"/>` +
+      `<rect x="0" y="${n(VIEW_H - bar)}" width="${VIEW_W}" height="${n(bar)}" fill="url(#pd-bar)"/><rect x="0" y="${n(VIEW_H - bar)}" width="${VIEW_W}" height="${n(1.5 * k)}" fill="#e6ecff" opacity="0.14"/>` +
       `<text x="${n(14 * k)}" y="${n(VIEW_H - bar * 0.3)}" font-size="${n(size)}" fill="${st.color}">${esc(st.text)}</text>`
   }
 
@@ -1420,9 +1641,9 @@ export function forgeEmblem(busy: boolean): string {
   const beat = busy ? '0.8s' : '1.8s'
   const glow = busy ? '0.55;1;0.55' : '0.45;0.8;0.45'
   let hammer =
-    `<rect x="40" y="15.5" width="24" height="5" rx="2" fill="#b07444" ${ink}/>` +
-    `<rect x="29" y="9" width="13" height="17" rx="2" fill="#c3cad6" ${ink}/>` +
-    `<rect x="31" y="11" width="3" height="13" rx="1" fill="#ffffff" opacity="0.35"/>`
+    `<rect x="40" y="15.5" width="24" height="5" rx="2" fill="url(#pe-wood)" ${ink}/>` +
+    `<rect x="29" y="9" width="13" height="17" rx="2" fill="url(#pe-steel)" ${ink}/>` +
+    `<rect x="31" y="11" width="3" height="13" rx="1" fill="#ffffff" opacity="0.45"/>`
   let sparks = ''
   if (busy) {
     // Down on the ingot a third of the way through each beat, then up again.
@@ -1460,14 +1681,20 @@ export function forgeEmblem(busy: boolean): string {
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${b.x} ${b.y} ${b.w} ${b.h}" width="100%" height="100%">` +
-    // The ingot's heat on the dark: rings of light, brightest at its middle.
+    // Iron lit from above, steel from the left, a wooden handle, and the ingot white-hot at its heart.
+    `<defs>${radial('pe-glow', stop(0, '#ffc25a', 0.75) + stop(0.45, '#ff8a3d', 0.28) + stop(1, '#ff8a3d', 0))}` +
+    linear('pe-iron', stop(0, '#c6ccd6') + stop(0.45, '#8a929e') + stop(1, '#555c68'), DOWN) +
+    linear('pe-steel', stop(0, '#f2f5fa') + stop(0.5, '#b4bccb') + stop(1, '#7c8596'), '') +
+    linear('pe-wood', stop(0, '#d49058') + stop(1, '#8a532c'), DOWN) +
+    `${linear('pe-ingot', stop(0, '#fff6b0') + stop(0.5, '#ffb020') + stop(1, '#ff5a1a'), DOWN)}</defs>` +
+    // The ingot's heat on the dark, brightest at its middle.
     `<g opacity="0.55"><animate attributeName="opacity" values="${glow}" dur="${beat}" repeatCount="indefinite"/>` +
-    `<circle cx="36.5" cy="29" r="22" fill="#ff8a3d" opacity="0.1"/><circle cx="36.5" cy="29" r="15" fill="#ff8a3d" opacity="0.14"/><circle cx="36.5" cy="29" r="9" fill="#ffd166" opacity="0.2"/></g>` +
-    `<path d="M3 35Q12 35 17 32H59V41H49L44 47V51L52 56V61H13V56L21 51V47L18 43Q8 41 3 35Z" fill="#8a929e" ${ink}/>` +
-    `<path d="M18 34H57V36.5H18Z" fill="#ffffff" opacity="0.4"/>` +
-    `<path d="M44 47V51L52 56V61H40Z" fill="#000000" opacity="0.2"/>` +
-    `<rect x="25" y="26" width="23" height="6" rx="2" fill="#ff8a3d" ${ink}/>` +
-    `<rect x="27.5" y="27.3" width="12" height="1.8" rx="0.9" fill="#ffe066"/>` +
+    `<circle cx="36.5" cy="29" r="27" fill="url(#pe-glow)"/></g>` +
+    `<path d="M3 35Q12 35 17 32H59V41H49L44 47V51L52 56V61H13V56L21 51V47L18 43Q8 41 3 35Z" fill="url(#pe-iron)" ${ink}/>` +
+    `<path d="M18 34H57V36.5H18Z" fill="#ffffff" opacity="0.45"/>` +
+    `<path d="M44 47V51L52 56V61H40Z" fill="#000000" opacity="0.22"/>` +
+    `<rect x="25" y="26" width="23" height="6" rx="2" fill="url(#pe-ingot)" ${ink}/>` +
+    `<rect x="27.5" y="27.3" width="12" height="1.8" rx="0.9" fill="#fffbe0" opacity="0.9"/>` +
     sparks +
     hammer +
     `</svg>`
@@ -1501,8 +1728,8 @@ export function forgingMarkup(x: number, y: number, e: number): string {
   const spin = (from: number, to: number, dur: number, at = 0) =>
     `<animateTransform attributeName="transform" type="rotate" from="${from}" to="${to}" dur="${dur}s" begin="${since(e, at)}" repeatCount="indefinite"/>`
   let out = `<g transform="translate(${n(x)} ${n(y)})">`
-  out += `<circle r="44" fill="#ff8a3d" opacity="0.12">${loop('r', '38;50;38', 1.6)}</circle>`
-  out += `<circle r="26" fill="#ffb347" opacity="0.2">${loop('r', '22;30;22', 0.8)}</circle>`
+  out += `<circle r="58" fill="url(#pg-ff8a3d)" opacity="0.8">${loop('r', '50;66;50', 1.6)}</circle>`
+  out += `<circle r="34" fill="url(#pg-ffc25a)">${loop('r', '28;38;28', 0.8)}</circle>`
   out += `<g>${spin(0, 360, 4)}<circle r="34" fill="none" stroke="#ffd166" stroke-width="2.4" stroke-dasharray="11 5 2 5" opacity="0.85"/></g>`
   let runes = ''
   for (let i = 0; i < 4; i++) runes += `<path d="M0 -51l4 6l-4 6l-4 -6z" fill="#ff8a3d" transform="rotate(${i * 90 + 45})"/>`
@@ -1542,7 +1769,7 @@ export function revealMarkup(x: number, y: number, e: number, R: number): { back
   const once = (attr: string, values: string, dur: number, extra = '') =>
     `<animate attributeName="${attr}" values="${values}" dur="${dur}s" begin="${since(e)}" fill="freeze"${extra}/>`
   const at = `transform="translate(${n(x)} ${n(y)})"`
-  const back = `<g ${at}><circle r="${n(R + 12)}" fill="#ffd166" opacity="0">${once('opacity', '0.45;0.18;0', 0.7)}${once('r', `${n(R + 4)};${n(R + 18)}`, 0.7)}</circle></g>`
+  const back = `<g ${at}><circle r="${n(R * 1.5 + 18)}" fill="url(#pg-ffd166)" opacity="0">${once('opacity', '1;0.45;0', 0.7)}${once('r', `${n(R * 1.5 + 6)};${n(R * 1.5 + 27)}`, 0.7)}</circle></g>`
   let front = `<g ${at}>`
   front += `<circle r="16" fill="#ffffff" opacity="0">${once('opacity', '0.95;0', 0.3)}${once('r', '16;60', 0.3)}</circle>`
   front += `<circle r="12" fill="none" stroke="#ffd166" stroke-width="5" opacity="0">${once('r', '12;78', 0.55)}${once('opacity', '1;0', 0.55)}${once('stroke-width', '5;1', 0.55)}</circle>`
@@ -1835,15 +2062,16 @@ function keyed(keys: number[], from: number, span: number, value: (i: number) =>
 /** At most this many stretches of each element are drawn on one body. */
 const MAX_SPANS = 8
 
-/** A body's track: placed at its first pose, then moved and turned through the rest. */
-function trackMarkup(rec: Recording, tr: Track, detail: AnimDetail, art: boolean): string {
+/**
+ * The stretch of a track where it moves: from the pose before it first moved
+ * to the one it came to rest at (null: it never moved). Most of a tower
+ * stands still.
+ */
+function motion(tr: Track): { from: number; last: number } | null {
   const p = tr.poses
   const count = p.length / 3
-  const X = (i: number) => sx(p[3 * i]!)
-  const Y = (i: number) => sy(p[3 * i + 1]!)
-  const D = (i: number) => (-p[3 * i + 2]! * 180) / Math.PI
-  const same = (i: number, j: number) => Math.abs(X(i) - X(j)) < 0.05 && Math.abs(Y(i) - Y(j)) < 0.05 && Math.abs(D(i) - D(j)) < 0.05
-  // Only the stretch where it moves is keyed: most of a tower stands still.
+  const same = (i: number, j: number) =>
+    Math.abs(sx(p[3 * i]!) - sx(p[3 * j]!)) < 0.05 && Math.abs(sy(p[3 * i + 1]!) - sy(p[3 * j + 1]!)) < 0.05 && Math.abs(((p[3 * i + 2]! - p[3 * j + 2]!) * 180) / Math.PI) < 0.05
   let first = -1
   for (let i = 1; i < count; i++) {
     if (!same(i, 0)) {
@@ -1851,12 +2079,73 @@ function trackMarkup(rec: Recording, tr: Track, detail: AnimDetail, art: boolean
       break
     }
   }
+  if (first <= 0) return null
+  let last = count - 1
+  while (last > first && same(last - 1, count - 1)) last--
+
+  return { from: first - 1, last }
+}
+
+/**
+ * The soft shadow on the ground under a body standing on it, at a pose
+ * (meters, radians); '' when it is off the ground.
+ */
+function groundShadow(b: Body, x: number, y: number, a: number): string {
+  let lo = y - b.r
+  let left = x - b.r
+  let right = x + b.r
+  if (b.shape !== 'circle') {
+    const c = Math.cos(a)
+    const s = Math.sin(a)
+    lo = Infinity
+    left = Infinity
+    right = -Infinity
+    for (let i = 0; i < b.verts.length; i += 2) {
+      const vx = x + c * b.verts[i]! - s * b.verts[i + 1]!
+      const vy = y + s * b.verts[i]! + c * b.verts[i + 1]!
+      lo = Math.min(lo, vy)
+      left = Math.min(left, vx)
+      right = Math.max(right, vx)
+    }
+  }
+  if (lo > 0.12) return ''
+
+  return `<ellipse cx="${n(sx((left + right) / 2))}" cy="${n(sy(0) + 1.5)}" rx="${n(((right - left) * S) / 2 + 7)}" ry="5.5" fill="url(#pd-shadow)"/>`
+}
+
+/**
+ * A track's shadows on the ground: where it stood, until it moves off, and
+ * where it comes to rest, from then on; each gone with the body.
+ */
+function trackShadow(tr: Track): string {
+  const b = tr.body
+  if (b.kind === 'bug') return ''
+  const p = tr.poses
+  const last = p.length / 3 - 1
+  const end = tr.died >= 0 ? gone(tr.died) : ''
+  const span = motion(tr)
+  const start = groundShadow(b, p[0]!, p[1]!, p[2]!)
+  // Each in a group of its own: what hides it must hide nothing else.
+  if (!span) return start ? `<g${tr.born > 0 ? ' visibility="hidden"' : ''}>${tr.born > 0 ? show(tr.born) : ''}${end}${start}</g>` : ''
+  let out = ''
+  if (start && tr.born === 0) out += `<g>${end}<animate attributeName="opacity" values="1;0" begin="${at(tr.born + span.from)}" dur="0.12s" fill="freeze"/>${start}</g>`
+  const rest = groundShadow(b, p[3 * last]!, p[3 * last + 1]!, p[3 * last + 2]!)
+  if (rest) out += `<g opacity="0">${end}<animate attributeName="opacity" values="0;1" begin="${at(tr.born + span.last)}" dur="0.2s" fill="freeze"/>${rest}</g>`
+
+  return out
+}
+
+/** A body's track: placed at its first pose, then moved and turned through the rest. */
+function trackMarkup(rec: Recording, tr: Track, detail: AnimDetail, art: boolean): string {
+  const p = tr.poses
+  const X = (i: number) => sx(p[3 * i]!)
+  const Y = (i: number) => sy(p[3 * i + 1]!)
+  const D = (i: number) => (-p[3 * i + 2]! * 180) / Math.PI
   let move = ''
   let turn = ''
-  if (first > 0) {
-    let last = count - 1
-    while (last > first && same(last - 1, count - 1)) last--
-    const from = first - 1
+  const moving = motion(tr)
+  if (moving) {
+    const { from, last } = moving
     const ticks: number[] = []
     for (let i = from; i < last; i += detail.stride) ticks.push(i)
     ticks.push(last)
@@ -1890,6 +2179,7 @@ function trackMarkup(rec: Recording, tr: Track, detail: AnimDetail, art: boolean
     )
   } else if (b.kind === 'bug') {
     look = bugLook({ ...b, x: p[0]!, y: p[1]!, a: p[2]! }, rec.look)
+    near += BUG_SHADOW
   } else {
     look = shotLook(b.spec, b, b.color, b.scale, art && !b.shard)
     for (const j of rec.joints) {
@@ -1922,7 +2212,7 @@ function trackMarkup(rec: Recording, tr: Track, detail: AnimDetail, art: boolean
       near += during(
         r.from,
         r.until,
-        `<circle r="${n((b.r + 0.25) * S)}" fill="#ffd166" opacity="0.3"><animate attributeName="opacity" values="0.2;0.45;0.2" dur="0.5s" repeatCount="indefinite"/></circle>`,
+        `<circle r="${n((b.r + 0.25) * S * READY)}" fill="url(#pg-ffd166)" opacity="0.6"><animate attributeName="opacity" values="0.4;0.95;0.4" dur="0.5s" repeatCount="indefinite"/></circle>`,
       )
     }
   }
@@ -2004,24 +2294,23 @@ function sparkMarkup(s0: Spark): string {
   const keys = Array.from({ length: nKeys }, (_, k) => pts[Math.round((k * ticks) / (nKeys - 1))]!)
   const dur = `${Math.round(ticks * TICK_MS) / 1000}s`
   const time = `begin="${at(s0.born)}" dur="${dur}"`
-  const c = hexColor(s0.color)
   // Whole pixels: a particle is a speck, and its markup adds up.
   const move = `<animateTransform attributeName="transform" type="translate" values="${keys.map(([kx, ky]) => `${Math.round(sx(kx))} ${Math.round(sy(ky))}`).join(';')}" ${time}/>`
   const fade = (values: string) => `<animate attributeName="opacity" values="${values}" ${time}/>`
   let look: string
   if (s0.kind === 'smoke') {
-    const r0 = s0.size * S * 0.5
-    look = `<circle r="${n(r0)}" fill="${c}" opacity="0"><animate attributeName="r" values="${n(r0)};${n(r0 * 2.2)}" ${time}/>${fade('0.38;0.26;0')}</circle>`
+    const r0 = s0.size * S * 0.5 * SOFT
+    look = `<circle r="${n(r0)}" fill="${tinted('s', s0.color)}" opacity="0"><animate attributeName="r" values="${n(r0)};${n(r0 * 2.2)}" ${time}/>${fade('0.5;0.34;0')}</circle>`
   } else if (s0.kind === 'chunk') {
     const w = s0.size * S
     const h = w * 0.6
     const turn = Math.round((-s0.spin * ticks * TICK_S * 180) / Math.PI)
     look =
-      `<g opacity="0">${fade('1;1;1;0')}<rect x="${n(-w / 2)}" y="${n(-h / 2)}" width="${n(w)}" height="${n(h)}" rx="1" fill="${c}" stroke="#1b1b2b" stroke-width="0.8">` +
+      `<g opacity="0">${fade('1;1;1;0')}<rect x="${n(-w / 2)}" y="${n(-h / 2)}" width="${n(w)}" height="${n(h)}" rx="1" fill="${hexColor(s0.color)}" stroke="#1b1b2b" stroke-width="0.8">` +
       `<animateTransform attributeName="transform" type="rotate" values="0;${turn}" ${time}/></rect></g>`
   } else {
-    const r = Math.max(1.1, s0.size * S * 0.6)
-    look = `<circle r="${n(r)}" fill="${c}" opacity="0">${fade(`${n(Math.min(1, s0.life * 2.2))};0`)}</circle>`
+    const r = Math.max(1.1, s0.size * S * 0.6) * GLOW
+    look = `<circle r="${n(r)}" fill="${tinted('k', s0.color)}" opacity="0">${fade(`${n(Math.min(1, s0.life * 2.2))};0`)}</circle>`
   }
 
   // Unseen before it begins and once it ends: no place to start from, nothing held at the end.
@@ -2043,12 +2332,17 @@ function effectMarkup(born: number, fx: Effect): string {
     const drift = (dx: number, dy: number) =>
       `<animateTransform attributeName="transform" type="translate" values="${n(dx * R)} ${n(dy * R)};${n(dx * R * 2)} ${n(dy * R * 2)}" begin="${begin}" dur="${dur}" fill="freeze"/>`
     let lobes = ''
-    for (const [dx, dy, r0, r1] of LOBES) lobes += `<circle r="${n(R * r0)}" fill="#ff6a2a" transform="translate(${n(dx * R)} ${n(dy * R)})">${grow(R * r0, R * r1)}${drift(dx, dy)}</circle>`
+    for (const [dx, dy, r0, r1] of LOBES) lobes += `<circle r="${n(R * r0 * BALL)}" fill="url(#pd-fireball)" transform="translate(${n(dx * R)} ${n(dy * R)})">${grow(R * r0 * BALL, R * r1 * BALL)}${drift(dx, dy)}</circle>`
+    // A big one lights up the whole picture for a moment.
+    const flash = fx.r >= 2 ? `<rect x="${n(-sx(fx.x))}" y="${n(-sy(fx.y))}" width="${VIEW_W}" height="${VIEW_H}" fill="#fff3d6" opacity="0"><animate attributeName="opacity" values="0.24;0" begin="${begin}" dur="0.2s" fill="freeze"/></rect>` : ''
 
     return (
-      `<g transform="translate(${cx} ${cy})"><g opacity="0"><animate attributeName="opacity" values="0.9;0.7;0" keyTimes="0;0.35;1" begin="${begin}" dur="${dur}" fill="freeze"/>` +
+      `<g transform="translate(${cx} ${cy})">${flash}` +
+      // Its light thrown wide round it, flaring and dying away.
+      `<circle r="${n(R * LIGHT)}" fill="url(#pg-ff9a3a)" opacity="0"><animate attributeName="opacity" values="1;0.55;0" keyTimes="0;0.3;1" begin="${begin}" dur="${dur}" fill="freeze"/></circle>` +
+      `<g opacity="0"><animate attributeName="opacity" values="0.9;0.7;0" keyTimes="0;0.35;1" begin="${begin}" dur="${dur}" fill="freeze"/>` +
       lobes +
-      `<circle r="${n(R * 0.3)}" fill="#ffb347">${grow(R * 0.3, R * 0.5)}</circle>` +
+      `<circle r="${n(R * 0.3 * BALL)}" fill="url(#pd-fireball)">${grow(R * 0.3 * BALL, R * 0.5 * BALL)}</circle>` +
       `<circle r="${n(R * 0.16)}" fill="#fff1a8">${grow(R * 0.16, R * 0.26)}<animate attributeName="opacity" values="1;0;0" begin="${begin}" dur="${dur}" fill="freeze"/></circle></g>` +
       `<circle r="${n(R * 0.45)}" fill="#ffffff" opacity="0"><animate attributeName="opacity" values="0.9;0" begin="${begin}" dur="0.14s" fill="freeze"/></circle>` +
       // A shock ring racing out past the fireball, thinning as it goes.
@@ -2114,6 +2408,7 @@ function animate(rec: Recording, detail: AnimDetail): string {
     drawEmptyBand(),
     elementDefs(rec.tracks.flatMap(t => t.states)),
     bugDefs(rec.tracks.some(t => t.body.kind === 'bug')),
+    rec.tracks.map(trackShadow).join(''),
     pathMarkup(rec),
   ]
   let artLeft = detail.art
@@ -2136,7 +2431,7 @@ function animate(rec: Recording, detail: AnimDetail): string {
   parts.push('</g>')
   parts.push(layered(rec.hud), layered(rec.words))
 
-  return svgDoc(parts.join(''), true)
+  return svgDoc(withPaints(parts.join('')), true)
 }
 
 /**

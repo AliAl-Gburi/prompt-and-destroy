@@ -283,7 +283,7 @@ test('a spout of water is animated within what a post carries', () => {
   expect(rec.pellets.length).toBe(DROP.count)
   const svg = animation(rec)
   expect(svg.length).toBeLessThan(100_000)
-  expect((svg.match(/<circle r="5.5"/g) ?? []).length).toBe(DROP.count)
+  expect((svg.match(/<circle r="5.5" fill="#/g) ?? []).length).toBe(DROP.count)
 })
 
 test('a flight picked up at a moment of another starts with the shot where that one has it', () => {

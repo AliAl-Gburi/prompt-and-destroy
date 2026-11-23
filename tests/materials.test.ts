@@ -238,11 +238,14 @@ test('steel and concrete look their own, and so do their knocks and pits, stage 
   const steel = blocks(g, 'metal')[0]!
   const slab = blocks(g, 'concrete')[0]!
   const whole = draw()
-  // Steel: riveted plates; concrete: grit, and the holes its forms were tied with.
-  expect(whole).toContain('fill="#8ea2b6"')
+  // Steel: riveted plates, its edges catching the light; concrete: grit, and the holes its forms were tied with.
+  expect(whole).toContain('fill="url(#pd-metal)"')
+  expect(whole).toContain('stroke="url(#pd-sheen)"')
   expect(whole).toContain('stroke="#2a333e" stroke-width="3.4"')
-  expect(whole).toContain('fill="#b3ada2"')
+  expect(whole).toContain('fill="url(#pd-concrete)"')
   expect(whole).toContain('stroke="#827c71"')
+  // Each paint defined once, in the picture that uses it.
+  expect(whole.split('<linearGradient id="pd-metal"').length - 1).toBe(1)
   // Knocked about: steel dents, then buckles; concrete cracks, then spalls to its bars.
   steel.wear = steel.strength * 0.3
   slab.wear = slab.strength * 0.3

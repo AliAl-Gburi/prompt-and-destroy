@@ -88,15 +88,21 @@ on the bug inside.
 
 ## How it draws
 
-On the desktop the game is drawn as SVG (`hooks/vector.ts`): the Forge's drawing spins
-through the air, and the bugs watch your shot. Each material shows its own damage: wood
+On the desktop the game is drawn as SVG (`hooks/vector.ts`), lit by moonlight: a sky
+deepening overhead with the galaxy across it, hills fading into the haze with pines on
+the nearest ridge, blocks shaded and bevelled by their material, glossy bugs with the
+moon caught in their eyes, and soft shadows where things stand. Fire glows round its
+flames, a blast lights everything near it, smoke is soft at its edges and sparks burn
+white-hot. Each picture defines the gradients it uses once, and no filters, so
+animations stay cheap to draw. The Forge's drawing spins through the air, and the bugs
+watch your shot. Each material shows its own damage: wood
 splits along its grain, stone cracks, concrete cracks and spalls to its bars, glass stars,
 steel dents and buckles; acid leaves pits, rusting on steel, and hot steel glows. A shot's
 whole flight is worked out when it leaves the sling and played as one SMIL animation,
 keyed only where the motion needs it, so even a busy flight keeps every frame, spark and
 drawing.
-Between shots the scene lives: bugs breathe and blink, clouds drift and stars twinkle, all
-kept in step from picture to picture. A cleared level rains confetti; bugs that got away
+Between shots the scene lives: bugs breathe and blink, clouds drift, stars twinkle and now
+and then one shoots across the sky, all kept in step from picture to picture. A cleared level rains confetti; bugs that got away
 hop for joy.
 The game's `Client` lies invisible over the picture, taking the drags, clicks and keys and
 posting each frame. In the terminal the same game is drawn in half-block cells.

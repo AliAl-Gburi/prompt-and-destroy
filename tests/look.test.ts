@@ -17,7 +17,7 @@ import {
   type ShotSpec,
 } from '../hooks/engine'
 import { fly } from '../hooks/replay'
-import { animation, backdrop, useClock, vector } from '../hooks/vector'
+import { animation, backdrop, useClock, vector, type Recording } from '../hooks/vector'
 
 const ROUND: Round = {
   art: '',
@@ -92,12 +92,15 @@ test('an explosion is a flash and a fireball, smoke left hanging, and the world 
   expect(g.effects.some(fx => fx.kind === 'blast' && fx.r > 1.5)).toBe(true)
   expect(g.particles.filter(p => p.kind === 'smoke').length).toBeGreaterThanOrEqual(4)
   expect(g.particles.filter(p => p.kind === 'spark').length).toBeGreaterThanOrEqual(10)
-  // Still, the fireball's five lobes round its core.
-  expect(vector(g).svg.match(/fill="#ff6a2a"/g)?.length).toBe(5)
+  // Still, the fireball's five lobes round its core, its light thrown round it.
+  const still = vector(g).svg
+  expect(still.match(/<circle cx="[-\d.]+" cy="[-\d.]+" r="[\d.]+" fill="url\(#pd-fireball\)"\/>/g)?.length).toBe(5)
+  expect(still).toContain('fill="url(#pg-ff9a3a)"')
+  expect(still).toContain('<radialGradient id="pd-fireball">')
 
   const svg = animation(fly(g).rec)
   // The lobes swell and drift out, the flash is gone in a seventh of a second.
-  expect(svg.match(/<circle r="[\d.]+" fill="#ff6a2a" transform="translate/g)?.length).toBe(5)
+  expect(svg.match(/<circle r="[\d.]+" fill="url\(#pd-fireball\)" transform="translate/g)?.length).toBe(5)
   expect(svg).toContain('<animate attributeName="opacity" values="0.9;0" begin="0s" dur="0.14s" fill="freeze"/>')
   // The world shakes from the first tick, the bar along the top does not.
   expect(svg).toMatch(/^<svg[^>]*><g><animateTransform attributeName="transform" type="translate" values="0 0;-[\d.]+ [\d.]+;/)
@@ -393,5 +396,75 @@ test('a banner springs in, in a frame from when it went up and in a flight from 
   expect(banners).toBeGreaterThan(0)
   const svg = animation(rec)
   expect(svg.split('values="0.4;1.15;0.95;1"').length - 1).toBeGreaterThanOrEqual(banners)
+  wellFormed(svg)
+})
+
+/** Every paint `svg` fills or strokes with, each defined in it exactly once. */
+function paintsDefined(svg: string): number {
+  const used = new Set([...svg.matchAll(/url\(#([\w-]+)\)/g)].map(m => m[1]!))
+  for (const id of used) expect(`${id}: ${svg.split(`id="${id}"`).length - 1}`).toBe(`${id}: 1`)
+
+  return used.size
+}
+
+test('every picture defines each paint it is lit with, once, wherever it is drawn', () => {
+  // The scenery, kept under every frame.
+  expect(paintsDefined(backdrop())).toBeGreaterThan(10)
+  // A still frame mid-blast, with fire and bugs in it; then the flight it is part of, the scenery and all.
+  const g = flung(4, thing('Bomb', { width: 0.6, height: 0.6, shape: 'circle', ability: 'explode' }), { x: 2.2, y: 0.9 })
+  for (let i = 0; i < 22; i++) tick(g)
+  expect(trigger(g)).toBe(true)
+  g.bodies.find(b => b.kind === 'block' && b.mat === 'wood')!.fire = 2
+  for (let i = 0; i < 3; i++) tick(g)
+  const still = vector(g).svg
+  expect(paintsDefined(still)).toBeGreaterThan(10)
+  const svg = animation(fly(g).rec)
+  expect(paintsDefined(svg)).toBeGreaterThan(10)
+  // A paint made for a color: smoke soft at its edge, sparks glowing.
+  expect(svg).toMatch(/fill="url\(#ps-[0-9a-f]{6}\)"/)
+  expect(svg).toMatch(/fill="url\(#pk-[0-9a-f]{6}\)"/)
+  wellFormed(svg)
+})
+
+test('a block stands in its own shadow, and one broken where it stood takes only that shadow with it', () => {
+  const g = newGame(1, 0)
+  settleNow(g)
+  const standing = g.bodies.filter(b => b.kind === 'block' && b.y - b.hh < 0.12)
+  expect(standing.length).toBeGreaterThan(0)
+  const still = vector(g).svg
+  expect(still.match(/ry="5.5" fill="url\(#pd-shadow\)"/g)?.length).toBe(standing.length)
+  // A post that breaks without moving first: what hides its shadow must hide nothing else.
+  const post = standing[0]!
+  const ticks = 10
+  const rec: Recording = {
+    ticks,
+    tracks: [{ body: post, born: 0, died: 5, poses: Array.from({ length: 6 }, () => [post.x, post.y, post.a]).flat(), cracked: [-1, -1], eaten: [-1, -1], flash: -1, states: Array(6).fill('') }],
+    pellets: [],
+    sparks: [],
+    effects: [],
+    path: [],
+    joints: [],
+    hud: Array(ticks + 1).fill(''),
+    words: Array(ticks + 1).fill(''),
+    ready: Array(ticks + 1).fill(null),
+    look: null,
+  }
+  const svg = animation(rec)
+  expect(svg).toContain('fill="url(#pd-shadow)"')
+  // Each `display` set sits inside a group of its own, never straight in the world's (the svg, then the shaken world, then it).
+  const stack: string[] = []
+  let sets = 0
+  for (const m of svg.matchAll(/<(\/?)([a-zA-Z]+)([^>]*?)(\/?)>/g)) {
+    if (m[1]) {
+      stack.pop()
+      continue
+    }
+    if (m[2] === 'set' && m[3]!.includes('attributeName="display"')) {
+      sets++
+      expect(stack.length).toBeGreaterThanOrEqual(3)
+    }
+    if (!m[4]) stack.push(m[2]!)
+  }
+  expect(sets).toBe(2)
   wellFormed(svg)
 })

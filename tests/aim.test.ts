@@ -108,7 +108,7 @@ test('the scenery and the frames over it are drawn for the same view', () => {
   expect(box(sky)).toBe(box(frame))
   expect(box(sky)).toBe(`0 0 1040 ${Math.round((view.y1 - view.y0) * 40)}`)
   // The ground is at the foot of the picture, however tall: its grass a meter's height above it.
-  const grass = /<rect x="0" y="([\d.]+)" width="1040" height="9" fill="#4c8a3f"\/>/.exec(sky)
+  const grass = /<rect y="([\d.]+)" width="1040" height="10" fill="url\(#pds-turf\)"\/>/.exec(sky)
   expect(Math.abs(Number(grass![1]) - ((view.y1 - view.y0) * 40 - 40))).toBeLessThan(1)
 })
 
